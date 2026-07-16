@@ -7,7 +7,7 @@ import sys
 from collections.abc import Sequence
 
 from redis import Redis
-from rq import Queue, Worker
+from rq import Queue, SimpleWorker, Worker
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -29,7 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     create_admin = subparsers.add_parser("create-admin", help="Create an administrator")
     create_admin.add_argument("--email", required=True)
     create_admin.add_argument("--name", required=True)
-    subparsers.add_parser("worker", help="Run the dataset operations worker")
+    worker = subparsers.add_parser("worker", help="Run the dataset operations worker")
+    worker.add_argument(
+        "--simple",
+        action="store_true",
+        help="Run jobs in-process (recommended for native macOS development)",
+    )
     subparsers.add_parser("reconcile", help="Reconcile active external sessions and runs")
     return parser
 
@@ -81,7 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings = Settings()
         connection = Redis.from_url(settings.redis_url)
         queue = Queue("dataset-operations", connection=connection)
-        Worker([queue], connection=connection).work()
+        worker_type = SimpleWorker if args.simple else Worker
+        worker_type([queue], connection=connection).work()
         return 0
     if args.command == "reconcile":
         settings = Settings()

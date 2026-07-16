@@ -27,6 +27,14 @@ uv run uvicorn label_platform.api.app:create_app_from_env --factory --host 127.0
 uv run label-platform worker
 ```
 
+macOS 原生开发应使用同进程 worker，避免系统框架与 fork 冲突：
+
+```bash
+uv run label-platform worker --simple
+```
+
+Compose/Linux 部署继续使用默认 worker，以保留独立 job 子进程和超时隔离。
+
 再启动前端：
 
 ```bash

@@ -1,9 +1,16 @@
-from label_platform.cli import main
+from label_platform.cli import build_parser, main
 from label_platform.config import Settings
 from label_platform.db.base import Base
 from label_platform.db.models import User
 from label_platform.db.session import create_engine_from_settings, create_session_factory
 from label_platform.domain.enums import UserRole
+
+
+def test_worker_command_supports_in_process_mode():
+    args = build_parser().parse_args(["worker", "--simple"])
+
+    assert args.command == "worker"
+    assert args.simple is True
 
 
 def test_create_admin_command_creates_active_administrator(tmp_path, monkeypatch):
