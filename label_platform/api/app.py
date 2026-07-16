@@ -5,11 +5,14 @@ from fastapi import Depends, FastAPI
 
 from label_platform.api.dependencies import require_roles
 from label_platform.api.routes.auth import router as auth_router
+from label_platform.api.routes.datasets import router as datasets_router
+from label_platform.api.routes.jobs import router as jobs_router
 from label_platform.api.routes.roots import router as roots_router
 from label_platform.api.routes.users import router as users_router
 from label_platform.config import Settings
 from label_platform.db.session import create_engine_from_settings, create_session_factory
 from label_platform.domain.enums import UserRole
+from label_platform.jobs.queue import RQJobQueue
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -26,7 +29,10 @@ def create_app(settings: Settings) -> FastAPI:
 
     app = FastAPI(title="Label Platform API", lifespan=lifespan)
     app.state.settings = settings
+    app.state.job_queue = RQJobQueue(settings.redis_url)
     app.include_router(auth_router)
+    app.include_router(datasets_router)
+    app.include_router(jobs_router)
     app.include_router(roots_router)
     app.include_router(users_router)
 

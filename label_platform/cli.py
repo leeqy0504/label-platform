@@ -5,6 +5,8 @@ import getpass
 import sys
 from collections.abc import Sequence
 
+from redis import Redis
+from rq import Queue, Worker
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -21,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_admin = subparsers.add_parser("create-admin", help="Create an administrator")
     create_admin.add_argument("--email", required=True)
     create_admin.add_argument("--name", required=True)
+    subparsers.add_parser("worker", help="Run the dataset operations worker")
     return parser
 
 
@@ -67,4 +70,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "create-admin":
         return create_admin(args.email, args.name, Settings())
+    if args.command == "worker":
+        settings = Settings()
+        connection = Redis.from_url(settings.redis_url)
+        queue = Queue("dataset-operations", connection=connection)
+        Worker([queue], connection=connection).work()
+        return 0
     return 2

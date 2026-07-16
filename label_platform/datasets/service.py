@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from label_platform.datasets.coco_adapter import CocoAdapter
+from label_platform.datasets.analysis import source_fingerprint
 from label_platform.datasets.contracts import SourceDataset
 from label_platform.datasets.detection import detect_source
 from label_platform.datasets.image_adapter import ImageDirectoryAdapter
@@ -36,6 +37,7 @@ class DatasetRegistrationRequest:
     split_ratios: dict[str, float] | None = None
     source_version: str | None = None
     source_lineage: dict[str, object] = field(default_factory=dict)
+    expected_fingerprint: str | None = None
 
 
 class RegistrationService:
@@ -54,7 +56,20 @@ class RegistrationService:
         version = self._allocate_version(request)
         publication: PublicationResult | None = None
         try:
-            source = self._adapt_source(request)
+            source = adapt_source(
+                request.source_path,
+                dataset_id=request.dataset_id,
+                categories=request.categories,
+                task_type=request.task_type,
+            )
+            if request.expected_fingerprint is not None:
+                current_fingerprint = source_fingerprint(
+                    source,
+                    split_seed=request.split_seed,
+                    split_ratios=request.split_ratios,
+                )
+                if current_fingerprint != request.expected_fingerprint:
+                    raise DatasetRegistrationError("Source changed since analysis")
             canonical = normalize_source(
                 source,
                 split_seed=request.split_seed,
@@ -132,27 +147,6 @@ class RegistrationService:
             session.expunge(version)
             return version
 
-    def _adapt_source(self, request: DatasetRegistrationRequest) -> SourceDataset:
-        detected = detect_source(request.source_path)
-        if detected.format is SourceFormat.IMAGE_DIRECTORY:
-            return ImageDirectoryAdapter().read(
-                request.source_path,
-                dataset_id=request.dataset_id,
-                categories=list(request.categories),
-                task_type=request.task_type,
-            )
-        if detected.format in {SourceFormat.COCO_DETECTION, SourceFormat.COCO_INSTANCE}:
-            return CocoAdapter().read(request.source_path, dataset_id=request.dataset_id)
-        if detected.format is SourceFormat.LABEL_STUDIO:
-            if detected.annotation_path is None:
-                raise DatasetRegistrationError("Label Studio export file was not detected")
-            return LabelStudioExportAdapter().read(
-                detected.annotation_path,
-                dataset_id=request.dataset_id,
-                categories=list(request.categories) or None,
-            )
-        raise DatasetRegistrationError(f"Unsupported source format: {detected.format}")
-
     def _mark_ready(
         self,
         version_id: str,
@@ -223,3 +217,31 @@ class RegistrationService:
                 else {"valid": False, "errors": [{"code": "registration_failed", "message": str(error)}]}
             )
             version.status = VersionStatus.INVALID
+
+
+def adapt_source(
+    source_path: Path,
+    *,
+    dataset_id: str,
+    categories: tuple[str, ...],
+    task_type: TaskType,
+) -> SourceDataset:
+    detected = detect_source(source_path)
+    if detected.format is SourceFormat.IMAGE_DIRECTORY:
+        return ImageDirectoryAdapter().read(
+            source_path,
+            dataset_id=dataset_id,
+            categories=list(categories),
+            task_type=task_type,
+        )
+    if detected.format in {SourceFormat.COCO_DETECTION, SourceFormat.COCO_INSTANCE}:
+        return CocoAdapter().read(source_path, dataset_id=dataset_id)
+    if detected.format is SourceFormat.LABEL_STUDIO:
+        if detected.annotation_path is None:
+            raise DatasetRegistrationError("Label Studio export file was not detected")
+        return LabelStudioExportAdapter().read(
+            detected.annotation_path,
+            dataset_id=dataset_id,
+            categories=list(categories) or None,
+        )
+    raise DatasetRegistrationError(f"Unsupported source format: {detected.format}")
