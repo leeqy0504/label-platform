@@ -1,11 +1,30 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "unitrain"
+name = "label-platform"
 version = "0.1.0"
-description = "UniTrain - Universal Training Framework for deep learning models"
+description = "Dataset, Label Studio, and UnitTrain management platform"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.14"
 dependencies = [
-    "pyyaml>=6.0",
+    "alembic>=1.16,<2",
+    "fastapi>=0.116,<1",
+    "httpx>=0.28,<1",
+    "itsdangerous>=2.2,<3",
+    "label-studio-sdk>=1.0.5,<2",
+    "numpy>=2,<3",
+    "pillow>=11,<13",
+    "psycopg[binary]>=3.2,<4",
+    "pycocotools>=2.0.10,<3",
+    "pwdlib[argon2]>=0.2,<1",
+    "pydantic-settings>=2.10,<3",
+    "pyyaml>=6,<7",
+    "redis>=6,<7",
+    "rq>=2.5,<3",
+    "sqlalchemy>=2.0,<3",
+    "uvicorn[standard]>=0.35,<1",
 ]
 
 [project.scripts]
@@ -14,7 +33,25 @@ unitrain-predict = "cli.predict:main"
 unitrain-export = "cli.export:main"
 
 [tool.setuptools.packages.find]
-include = ["unitrain*", "cli*"]
+include = ["label_platform*", "unitrain*", "cli*"]
 
 [dependency-groups]
-dev = []
+dev = [
+    "httpx2>=2,<3",
+    "mypy>=1.17,<2",
+    "pytest>=8.4,<10",
+    "pytest-cov>=6.2,<8",
+    "ruff>=0.12,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["label_platform"]
+strict = true
