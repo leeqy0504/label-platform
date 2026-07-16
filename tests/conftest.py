@@ -1,7 +1,9 @@
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from pwdlib import PasswordHash
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,26 @@ from label_platform.db.base import Base
 from label_platform.db.models import AllowedRoot, User
 from label_platform.db.session import create_engine_from_settings, create_session_factory
 from label_platform.domain.enums import UserRole
+
+
+@pytest.fixture
+def image_factory() -> Callable[..., Path]:
+    def create_image(
+        path: Path,
+        *,
+        size: tuple[int, int] = (32, 24),
+        image_format: str | None = None,
+        orientation: int | None = None,
+    ) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        image = Image.new("RGB", size, color=(120, 80, 40))
+        exif = Image.Exif()
+        if orientation is not None:
+            exif[274] = orientation
+        image.save(path, format=image_format, exif=exif)
+        return path
+
+    return create_image
 
 
 @pytest.fixture
