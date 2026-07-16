@@ -28,6 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
+label-platform = "label_platform.cli:main"
 unitrain-train = "cli.train:main"
 unitrain-predict = "cli.predict:main"
 unitrain-export = "cli.export:main"
@@ -54,4 +55,5 @@ target-version = "py312"
 [tool.mypy]
 python_version = "3.12"
 packages = ["label_platform"]
+plugins = ["pydantic.mypy"]
 strict = true
