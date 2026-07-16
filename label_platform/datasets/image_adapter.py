@@ -1,20 +1,10 @@
-import hashlib
 from pathlib import Path
-
-from PIL import Image, ImageOps, UnidentifiedImageError
 
 from label_platform.datasets.contracts import SourceDataset, SourceFormatError, SourceImage
 from label_platform.datasets.detection import IMAGE_EXTENSIONS
+from label_platform.datasets.media import read_source_image
 from label_platform.datasets.paths import SourcePathError, iter_safe_files, resolve_approved_root
 from label_platform.domain.enums import SourceFormat, TaskType
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _normalize_categories(categories: list[str]) -> tuple[str, ...]:
@@ -55,32 +45,12 @@ class ImageDirectoryAdapter:
                 raise SourceFormatError(f"duplicate normalized image path: {relative_path}")
             relative_paths.add(relative_path)
 
-            try:
-                with Image.open(image_path) as opened:
-                    transposed = ImageOps.exif_transpose(opened)
-                    transposed.load()
-                    width, height = transposed.size
-            except (OSError, UnidentifiedImageError, ValueError) as exc:
-                raise SourceFormatError(f"cannot decode image: {relative_path}") from exc
-
-            sample_key = hashlib.sha256(
-                f"{dataset_id}\0{relative_path}".encode("utf-8")
-            ).hexdigest()
-            try:
-                file_size = image_path.stat(follow_symlinks=False).st_size
-                sha256 = _sha256_file(image_path)
-            except OSError as exc:
-                raise SourceFormatError(f"cannot read image: {relative_path}") from exc
-
             images.append(
-                SourceImage(
-                    source_path=image_path,
+                read_source_image(
+                    image_path,
+                    root=root,
+                    dataset_id=dataset_id,
                     relative_path=relative_path,
-                    sample_key=sample_key,
-                    width=width,
-                    height=height,
-                    file_size=file_size,
-                    sha256=sha256,
                 )
             )
 

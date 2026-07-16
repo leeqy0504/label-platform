@@ -60,6 +60,35 @@ def resolve_source_path(root: Path, relative: str) -> Path:
     return resolved_candidate
 
 
+def resolve_source_file(root: Path, relative: str) -> Path:
+    if "\x00" in relative or "\\" in relative:
+        raise SourcePathError("source path is not a valid POSIX relative path")
+
+    relative_path = PurePosixPath(relative)
+    if not relative or relative_path.is_absolute() or ".." in relative_path.parts:
+        raise SourcePathError("source file escapes the approved root")
+
+    resolved_root = resolve_approved_root(root)
+    candidate = resolved_root
+    for part in relative_path.parts:
+        if part in {"", "."}:
+            continue
+        candidate = candidate / part
+        if candidate.is_symlink():
+            raise SourcePathError("source file escapes the approved root through a symbolic link")
+
+    try:
+        resolved_candidate = candidate.resolve(strict=True)
+        mode = candidate.stat(follow_symlinks=False).st_mode
+    except OSError as exc:
+        raise SourcePathError("source image file does not exist") from exc
+    if not resolved_candidate.is_relative_to(resolved_root):
+        raise SourcePathError("source file escapes the approved root")
+    if not stat.S_ISREG(mode):
+        raise SourcePathError("source image file is not a regular file")
+    return resolved_candidate
+
+
 def iter_safe_files(root: Path) -> Iterator[Path]:
     resolved_root = resolve_approved_root(root)
 

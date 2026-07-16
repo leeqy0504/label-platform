@@ -43,6 +43,7 @@ dev = [
     "pytest>=8.4,<10",
     "pytest-cov>=6.2,<8",
     "ruff>=0.12,<1",
+    "types-pycocotools>=2.0.0.20260518",
 ]
 
 [tool.pytest.ini_options]
