@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 
 from label_platform.api.dependencies import require_roles
 from label_platform.api.routes.auth import router as auth_router
+from label_platform.api.routes.roots import router as roots_router
 from label_platform.api.routes.users import router as users_router
 from label_platform.config import Settings
 from label_platform.db.session import create_engine_from_settings, create_session_factory
@@ -26,6 +27,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Label Platform API", lifespan=lifespan)
     app.state.settings = settings
     app.include_router(auth_router)
+    app.include_router(roots_router)
     app.include_router(users_router)
 
     if settings.environment == "test":
