@@ -1,10 +1,10 @@
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
@@ -17,6 +17,7 @@ from label_platform.db.models import (
     DatasetItem,
     DatasetSource,
     DatasetVersion,
+    TrainingRun,
     User,
 )
 from label_platform.domain.enums import JobStatus, SourceFormat, TaskType, UserRole, VersionStatus
@@ -342,10 +343,34 @@ def list_datasets(
     _: CurrentUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=200),
+    dataset_status: Literal[
+        "scanning",
+        "pending_annotation",
+        "reviewing",
+        "trainable",
+        "validation_failed",
+        "archived",
+    ]
+    | None = Query(default=None, alias="status"),
 ) -> dict[str, object]:
-    total = session.scalar(select(func.count()).select_from(Dataset)) or 0
+    dataset_query = select(Dataset)
+    count_query = select(func.count()).select_from(Dataset)
+    if search is not None and (term := search.strip()):
+        escaped = _escape_like(term)
+        predicate = or_(
+            Dataset.name.ilike(f"%{escaped}%", escape="\\"),
+            Dataset.description.ilike(f"%{escaped}%", escape="\\"),
+        )
+        dataset_query = dataset_query.where(predicate)
+        count_query = count_query.where(predicate)
+    if dataset_status is not None:
+        dataset_query = dataset_query.where(Dataset.status == dataset_status)
+        count_query = count_query.where(Dataset.status == dataset_status)
+
+    total = session.scalar(count_query) or 0
     datasets = session.scalars(
-        select(Dataset)
+        dataset_query
         .order_by(Dataset.updated_at.desc(), Dataset.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -394,7 +419,7 @@ def list_versions(
         .order_by(DatasetVersion.version_number.desc())
     ).all()
     return {
-        "data": [_version_response(version) for version in versions],
+        "data": [_version_response(session, version) for version in versions],
         "meta": {"page": 1, "page_size": len(versions), "total": len(versions)},
     }
 
@@ -407,14 +432,34 @@ def list_items(
     _: CurrentUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    search: str | None = Query(default=None, max_length=500),
+    split: Literal["train", "val", "test"] | None = None,
+    annotation_status: Literal["annotated", "unannotated", "partial"] | None = None,
 ) -> dict[str, object]:
     version = _require_version(session, dataset_id, version_id)
-    total = session.scalar(
-        select(func.count()).select_from(DatasetItem).where(DatasetItem.version_id == version.id)
-    ) or 0
-    items = session.scalars(
-        select(DatasetItem)
+    item_query = select(DatasetItem).where(DatasetItem.version_id == version.id)
+    count_query = (
+        select(func.count())
+        .select_from(DatasetItem)
         .where(DatasetItem.version_id == version.id)
+    )
+    if search is not None and (term := search.strip()):
+        predicate = DatasetItem.relative_path.ilike(
+            f"%{_escape_like(term)}%",
+            escape="\\",
+        )
+        item_query = item_query.where(predicate)
+        count_query = count_query.where(predicate)
+    if split is not None:
+        item_query = item_query.where(DatasetItem.split == split)
+        count_query = count_query.where(DatasetItem.split == split)
+    if annotation_status is not None:
+        item_query = item_query.where(DatasetItem.status == annotation_status)
+        count_query = count_query.where(DatasetItem.status == annotation_status)
+
+    total = session.scalar(count_query) or 0
+    items = session.scalars(
+        item_query
         .order_by(DatasetItem.relative_path, DatasetItem.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -495,6 +540,10 @@ def _require_dataset(session: SessionDependency, dataset_id: str) -> Dataset:
     return dataset
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _require_version(
     session: SessionDependency,
     dataset_id: str,
@@ -521,6 +570,22 @@ def _dataset_summary(session: SessionDependency, dataset: Dataset) -> dict[str, 
         .order_by(DatasetVersion.version_number.desc())
         .limit(1)
     )
+    split_counts = {"train": 0, "val": 0, "test": 0}
+    total_size = 0
+    if current is not None:
+        total_size = session.scalar(
+            select(func.coalesce(func.sum(DatasetItem.file_size), 0)).where(
+                DatasetItem.version_id == current.id
+            )
+        ) or 0
+        rows = session.execute(
+            select(DatasetItem.split, func.count())
+            .where(DatasetItem.version_id == current.id)
+            .group_by(DatasetItem.split)
+        )
+        for split, count in rows:
+            if split in split_counts:
+                split_counts[split] = count
     return {
         "id": dataset.id,
         "name": dataset.name,
@@ -528,23 +593,41 @@ def _dataset_summary(session: SessionDependency, dataset: Dataset) -> dict[str, 
         "status": dataset.status,
         "created_at": dataset.created_at,
         "updated_at": dataset.updated_at,
+        "created_by": dataset.created_by.name,
         "current_version": current.version_number if current else None,
+        "current_version_id": current.id if current else None,
         "item_count": current.item_count if current else 0,
         "annotation_count": current.annotation_count if current else 0,
         "category_count": len(current.class_schema) if current else 0,
+        "class_schema": current.class_schema if current else [],
+        "category_counts": current.category_counts if current else {},
+        "split_counts": split_counts,
+        "total_size": total_size,
     }
 
 
-def _version_response(version: DatasetVersion) -> dict[str, object]:
+def _version_response(
+    session: SessionDependency,
+    version: DatasetVersion,
+) -> dict[str, object]:
     return {
         "id": version.id,
         "version_number": version.version_number,
         "parent_id": version.parent_id,
+        "review_session_id": version.review_session_id,
         "status": version.status.value,
         "class_schema": version.class_schema,
+        "category_counts": version.category_counts,
         "item_count": version.item_count,
         "annotation_count": version.annotation_count,
+        "training_count": session.scalar(
+            select(func.count())
+            .select_from(TrainingRun)
+            .where(TrainingRun.dataset_version_id == version.id)
+        )
+        or 0,
         "validation_result": version.validation_result,
+        "created_by": version.created_by.name if version.created_by else None,
         "created_at": version.created_at,
     }
 
@@ -561,5 +644,6 @@ def _item_response(item: DatasetItem) -> dict[str, object]:
         "sha256": item.sha256,
         "split": item.split,
         "status": item.status,
+        "annotation_count": item.annotation_count,
         "group_key": item.group_key,
     }

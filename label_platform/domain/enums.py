@@ -32,3 +32,21 @@ class JobStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class ReviewStatus(StrEnum):
+    CREATING = "creating"
+    IMPORTING = "importing"
+    READY = "ready"
+    IN_REVIEW = "in_review"
+    EXPORTING = "exporting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class TrainingStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED = "stopped"

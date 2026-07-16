@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
-from label_platform.db.models import AuditEvent, BackgroundJob, User
-from label_platform.domain.enums import JobStatus, UserRole
+from label_platform.db.models import AuditEvent, BackgroundJob, TrainingRun, User
+from label_platform.domain.enums import JobStatus, TrainingStatus, UserRole
 from label_platform.jobs.queue import JobQueue
 
 
@@ -83,8 +83,26 @@ def retry_job(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only failed jobs can be retried",
         )
-    if job.job_type not in {"dataset_analysis", "dataset_registration"}:
+    if job.job_type not in {
+        "dataset_analysis",
+        "dataset_registration",
+        "training_submission",
+    }:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job type cannot be retried")
+    if job.job_type == "training_submission":
+        run = (
+            session.get(TrainingRun, job.business_object_id)
+            if job.business_object_id is not None
+            else None
+        )
+        if run is None or run.unitrain_run_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Submitted UnitTrain runs cannot be retried as a submission",
+            )
+        run.status = TrainingStatus.QUEUED
+        run.error_summary = {}
+        run.completed_at = None
     job.status = JobStatus.PENDING
     job.stage = "pending"
     job.started_at = None
@@ -109,8 +127,10 @@ def retry_job(
     try:
         if job.job_type == "dataset_analysis":
             queue.enqueue_analysis(job.id)
-        else:
+        elif job.job_type == "dataset_registration":
             queue.enqueue_registration(job.id)
+        else:
+            queue.enqueue_training_submission(job.id)
     except Exception as exc:
         job.status = JobStatus.FAILED
         job.stage = "queue_failed"

@@ -1,0 +1,140 @@
+name: label-platform
+
+x-platform-environment: &platform-environment
+  PLATFORM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform-dev-password}@postgres:5432/${POSTGRES_DB:-platform}
+  PLATFORM_REDIS_URL: redis://redis:6379/0
+  PLATFORM_MANAGED_DATA_ROOT: /data/managed
+  PLATFORM_SESSION_SECRET: ${PLATFORM_SESSION_SECRET:-development-only-change-this-32-byte-secret}
+  PLATFORM_SESSION_MAX_AGE_SECONDS: ${PLATFORM_SESSION_MAX_AGE_SECONDS:-28800}
+  PLATFORM_SECURE_COOKIES: ${PLATFORM_SECURE_COOKIES:-false}
+  PLATFORM_ENVIRONMENT: ${PLATFORM_ENVIRONMENT:-development}
+  PLATFORM_LABEL_STUDIO_URL: ${PLATFORM_LABEL_STUDIO_URL:-http://host.docker.internal:8081}
+  PLATFORM_LABEL_STUDIO_API_TOKEN: ${PLATFORM_LABEL_STUDIO_API_TOKEN:-}
+  PLATFORM_LABEL_STUDIO_MOUNT_ROOT: /datasets
+  PLATFORM_LABEL_STUDIO_EXPORT_ROOT: /data/labelstudio/exports
+  PLATFORM_LABEL_STUDIO_TIMEOUT_SECONDS: ${PLATFORM_LABEL_STUDIO_TIMEOUT_SECONDS:-120}
+  PLATFORM_UNITRAIN_URL: ${PLATFORM_UNITRAIN_URL:-http://host.docker.internal:8090}
+  PLATFORM_UNITRAIN_API_TOKEN: ${PLATFORM_UNITRAIN_API_TOKEN:-}
+  PLATFORM_UNITRAIN_EXPORT_ROOT: /data/unitrain/exports
+  PLATFORM_UNITRAIN_MOUNT_ROOT: /datasets
+  PLATFORM_UNITRAIN_TIMEOUT_SECONDS: ${PLATFORM_UNITRAIN_TIMEOUT_SECONDS:-120}
+
+x-platform-service: &platform-service
+  build:
+    context: .
+    dockerfile: deploy/api.Dockerfile
+  environment: *platform-environment
+  volumes:
+    - ${SOURCE_DATA_PATH:-./var/sources}:/data/sources:ro
+    - ${MANAGED_DATA_PATH:-./var/managed}:/data/managed:rw
+    - ${LABEL_STUDIO_EXPORT_PATH:-./var/labelstudio/exports}:/data/labelstudio/exports:rw
+    - ${UNITRAIN_EXPORT_PATH:-./var/unitrain/exports}:/data/unitrain/exports:rw
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-platform}
+      POSTGRES_USER: ${POSTGRES_USER:-platform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-platform-dev-password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    <<: *platform-service
+    command: ["sh", "-c", "alembic upgrade head && uvicorn label_platform.api.app:create_app_from_env --factory --host 0.0.0.0 --port 8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    <<: *platform-service
+    command: ["label-platform", "worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+  unitrain-api:
+    profiles: ["unitrain"]
+    build:
+      context: .
+      dockerfile: deploy/api.Dockerfile
+    command: ["unitrain-api"]
+    environment:
+      UNITRAIN_API_RUN_ROOT: /data/runs
+      UNITRAIN_API_API_TOKEN: ${PLATFORM_UNITRAIN_API_TOKEN:-}
+      UNITRAIN_API_PUBLIC_URL: ${UNITRAIN_API_PUBLIC_URL:-http://127.0.0.1:8090}
+      UNITRAIN_API_HOST: 0.0.0.0
+      UNITRAIN_API_PORT: 8090
+      UNITRAIN_API_MAX_CONCURRENT_RUNS: ${UNITRAIN_API_MAX_CONCURRENT_RUNS:-1}
+    volumes:
+      - ${UNITRAIN_EXPORT_PATH:-./var/unitrain/exports}:/datasets:ro
+      - ${UNITRAIN_RUN_PATH:-./var/unitrain/runs}:/data/runs:rw
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+
+  label-studio:
+    profiles: ["integrations"]
+    image: heartexlabs/label-studio:1.13.1
+    environment:
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: /datasets
+    volumes:
+      - ${MANAGED_DATA_PATH:-./var/managed}:/datasets:ro
+      - ${LABEL_STUDIO_EXPORT_PATH:-./var/labelstudio/exports}:/exports:rw
+      - ${LABEL_STUDIO_APP_PATH:-./var/labelstudio/app}:/label-studio/data:rw
+    ports:
+      - "127.0.0.1:8081:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

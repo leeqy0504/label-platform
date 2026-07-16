@@ -11,8 +11,10 @@ def test_inline_queue_passes_only_job_id_to_handlers():
 
     queue.enqueue_analysis("analysis-job")
     queue.enqueue_registration("registration-job")
+    queue.enqueue_training_submission("training-job")
 
     assert analysis_ids == ["analysis-job"]
     assert registration_ids == ["registration-job"]
     assert queue.analysis_enqueued_count == 1
     assert queue.registration_enqueued_count == 1
+    assert queue.training_submission_enqueued_count == 1

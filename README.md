@@ -1,4 +1,135 @@
-# UniTrain
+# Label Platform
+
+内部视觉数据集平台，统一管理服务器目录登记、不可变数据集版本、Label Studio 人工审核和 UniTrain 训练流程。当前仓库已包含平台 API、后台任务、数据规范化/校验、真实前端，以及原有 UniTrain 源码。
+
+## Prerequisites
+
+- Python 3.12 or 3.13 and `uv`
+- Node.js 22 and npm
+- Docker with Compose v2 for PostgreSQL/Redis or the full local stack
+- Label Studio 1.13.1 is configured separately; UniTrain 本地训练环境暂不要求安装
+
+## Native development
+
+```bash
+cp .env.example .env
+mkdir -p var/sources var/managed
+uv sync
+docker compose up -d postgres redis
+uv run alembic upgrade head
+uv run label-platform create-admin --email admin@example.test --name Administrator
+uv run uvicorn label_platform.api.app:create_app_from_env --factory --host 127.0.0.1 --port 8000
+```
+
+在另一个终端启动单并发后台 worker：
+
+```bash
+uv run label-platform worker
+```
+
+再启动前端：
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+前端地址为 `http://127.0.0.1:5173`，Vite 将 `/api` 转发到 `127.0.0.1:8000`。管理员登录后先在系统管理中配置允许读取的来源根目录；平台只接受该白名单下的相对路径。
+
+本机已安装的 Label Studio 独立环境可按以下方式启动，Local Files 根目录必须与平台 managed 根目录一致：
+
+```bash
+LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true \
+LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT="$(pwd)/var/managed" \
+  .venv-labelstudio/bin/label-studio start --host 127.0.0.1 --port 8081
+```
+
+首次登录 Label Studio 后生成个人 API Token，把它写入本机 `.env` 的 `PLATFORM_LABEL_STUDIO_API_TOKEN`。同时将 `PLATFORM_LABEL_STUDIO_MOUNT_ROOT` 设置为 `var/managed` 的绝对路径。平台通过 REST 创建独立项目、Local Files storage 和任务，不读取或修改 Label Studio SQLite。项目就绪后，平台会打开 `/projects/<id>/data` 深链接。
+
+UniTrain 通过独立的薄 HTTP 服务接入。它不会调用带显存清理提示的 CLI，也不会自动安装框架环境：
+
+```bash
+UNITRAIN_API_RUN_ROOT="$(pwd)/var/unitrain/runs" \
+UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090 \
+  uv run unitrain-api
+```
+
+服务提供 `/runs`、日志、指标、停止和模型查询接口。真正提交训练前，仍需在 UniTrain 主机上按原项目方式准备 `.venv-yolo` 或 `.venv-rfdetr`；当前电脑无需为平台开发安装它们。平台先将 READY 版本原子物化为只读 `unitrain-coco-split-v1` 派生包，再通过 REST 提交，canonical 版本不会被训练进程修改。
+
+## Compose stack
+
+```bash
+cp .env.example .env
+mkdir -p var/sources var/managed
+docker compose up --build -d
+docker compose exec api label-platform create-admin --email admin@example.test --name Administrator
+```
+
+访问 `http://127.0.0.1:8080`。Compose 包含 PostgreSQL 16、Redis 7、API、一个 RQ worker 和 Nginx 静态前端。`var/sources` 在 API/worker 中只读，`var/managed` 读写。在 Linux 主机上若容器无法写入 managed 目录，将该目录所有者设置为镜像内 `platform` 用户（UID/GID 999）。
+
+可选的薄 UniTrain API 服务可用 `docker compose --profile unitrain up --build -d` 启动；该镜像同样不预装 YOLO/RF-DETR 训练环境。实际训练主机配置完成后，将 `PLATFORM_UNITRAIN_URL` 和共享的 `UNITRAIN_EXPORT_PATH` 指向该服务即可。
+
+Label Studio 容器可用 `docker compose --profile integrations up -d label-studio` 启动。完成首次登录并创建 API Token 后，仍需把 Token 配置到平台环境变量。生产环境应使用独立内部主机名和 TLS 反向代理，不共用平台会话 Cookie。
+
+常用运维命令：
+
+```bash
+docker compose ps
+docker compose logs -f api worker
+docker compose exec api alembic upgrade head
+docker compose down
+```
+
+建议每 5 分钟从受管的 cron/systemd timer 执行一次外部状态对账：
+
+```bash
+uv run label-platform reconcile
+```
+
+命令只处理非终态审核会话和训练 run。某个外部服务离线时保留本地最后状态，并在输出中报告错误，下一次执行可继续对账。
+
+## Backup and restore
+
+备份必须在同一恢复点保存 PostgreSQL 与文件目录。至少包括 `var/managed`、`var/labelstudio`、`var/unitrain` 和数据库导出；来源目录由原存储系统单独保护。
+
+```bash
+mkdir -p backups/$(date +%F)
+docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > backups/$(date +%F)/platform.dump
+rsync -a --delete var/managed/ backups/$(date +%F)/managed/
+rsync -a --delete var/labelstudio/ backups/$(date +%F)/labelstudio/
+rsync -a --delete var/unitrain/ backups/$(date +%F)/unitrain/
+```
+
+恢复时先停止 API、worker、Label Studio 与 UnitTrain，恢复三个文件目录，再对空数据库执行 `pg_restore --clean --if-exists`。恢复完成后运行 `alembic upgrade head` 和 `label-platform reconcile`，确认 managed 版本校验、Label Studio 项目绑定及 UniTrain run ID 都可解析后再开放 Web 流量。备份目录不得放在被 `rsync --delete` 的源目录中。
+
+## Verification
+
+```bash
+uv run pytest -m "not integration" -v
+uv run ruff check label_platform tests
+uv run mypy label_platform
+cd web
+npm run test:run
+npm run typecheck
+npm run build
+```
+
+真实 PostgreSQL/Redis 集成测试会清空目标数据库中的平台业务表，只能对一次性测试数据库执行：
+
+```bash
+docker compose up -d postgres redis
+PLATFORM_INTEGRATION_DATABASE_URL=postgresql+psycopg://platform:platform-dev-password@127.0.0.1:5432/platform \
+  uv run pytest -m integration tests/integration/test_register_dataset.py -v
+```
+
+该测试通过 Redis/RQ 分别执行分析和登记作业，发布 10 张图片的 `platform-coco-v1` 不可变 v1，并验证幂等重提不会创建第二个作业。
+
+## Production requirements
+
+必须替换 `POSTGRES_PASSWORD` 和 `PLATFORM_SESSION_SECRET`，启用 `PLATFORM_SECURE_COOKIES=true`，使用外部 TLS 反向代理，并按设计分别提供平台、Label Studio 与 UniTrain 内部主机名。来源目录保持只读，managed、Label Studio 导出和 UniTrain 运行目录分别持久化。不要将 `.env`、令牌或密码提交到 Git。
+
+## Bundled UniTrain source
 
 > 通用模型训练框架 (Universal Training Framework)
 

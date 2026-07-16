@@ -33,6 +33,25 @@ MAX_ARCHIVE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
 
 
 class LabelStudioExportAdapter:
+    def read_native_tasks(
+        self,
+        tasks: list[object],
+        *,
+        media_root: Path,
+        dataset_id: str,
+        categories: list[str],
+    ) -> SourceDataset:
+        try:
+            resolved_root = resolve_approved_root(media_root)
+        except SourcePathError as exc:
+            raise SourceFormatError(str(exc)) from exc
+        return self._read_native(
+            tasks,
+            media_root=resolved_root,
+            dataset_id=dataset_id,
+            frozen_categories=categories,
+        )
+
     def read(
         self,
         source_path: Path,

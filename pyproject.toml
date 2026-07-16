@@ -29,12 +29,13 @@ dependencies = [
 
 [project.scripts]
 label-platform = "label_platform.cli:main"
+unitrain-api = "unitrain_api.cli:main"
 unitrain-train = "cli.train:main"
 unitrain-predict = "cli.predict:main"
 unitrain-export = "cli.export:main"
 
 [tool.setuptools.packages.find]
-include = ["label_platform*", "unitrain*", "cli*"]
+include = ["label_platform*", "unitrain*", "unitrain_api*", "cli*"]
 
 [dependency-groups]
 dev = [
@@ -48,6 +49,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires the Compose PostgreSQL and Redis services",
+]
 
 [tool.ruff]
 line-length = 100

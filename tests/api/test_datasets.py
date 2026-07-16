@@ -143,6 +143,33 @@ def test_registration_is_idempotent_and_publishes_ready_dataset(
     assert listing.json()["data"][0]["current_version"] == 1
 
 
+def test_dataset_listing_filters_before_pagination(
+    dataset_api,
+    image_factory,
+):
+    client, _, _, _, root_id, source_root, _ = dataset_api
+    image_factory(source_root / "incoming/frame.jpg")
+    analysis = analyze(client, root_id)
+    client.post(
+        "/api/datasets/register",
+        json=registration_payload(root_id, analysis["result"]["fingerprint"]),
+    )
+
+    matching = client.get(
+        "/api/datasets",
+        params={"search": "CARGO", "status": "pending_annotation"},
+    )
+    missing = client.get("/api/datasets", params={"search": "missing"})
+    invalid_status = client.get("/api/datasets", params={"status": "not-a-status"})
+
+    assert matching.status_code == 200
+    assert matching.json()["meta"]["total"] == 1
+    assert matching.json()["data"][0]["name"] == "warehouse"
+    assert missing.status_code == 200
+    assert missing.json()["meta"]["total"] == 0
+    assert invalid_status.status_code == 422
+
+
 def test_registration_detects_source_change_and_retry_succeeds_after_restore(
     dataset_api,
     image_factory,
@@ -196,10 +223,28 @@ def test_dataset_detail_versions_items_and_media_are_scoped(
 
     assert detail.status_code == 200
     assert detail.json()["id"] == dataset_id
+    assert detail.json()["category_counts"] == {"1": 0}
     assert versions.status_code == 200
     assert versions.json()["data"][0]["status"] == "ready"
     assert items.status_code == 200
     item = items.json()["data"][0]
+    assert item["annotation_count"] == 0
+    filtered = client.get(
+        f"/api/datasets/{dataset_id}/versions/{version_id}/items",
+        params={
+            "search": "FRAME",
+            "split": item["split"],
+            "annotation_status": item["status"],
+        },
+    )
+    missing = client.get(
+        f"/api/datasets/{dataset_id}/versions/{version_id}/items",
+        params={"search": "missing"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["meta"]["total"] == 1
+    assert missing.status_code == 200
+    assert missing.json()["meta"]["total"] == 0
     media = client.get(
         f"/api/datasets/{dataset_id}/versions/{version_id}/items/{item['id']}/media"
     )

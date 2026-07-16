@@ -1,0 +1,1 @@
+"""Label Platform test suite."""

@@ -14,6 +14,8 @@ from label_platform.db.models import AllowedRoot, User
 from label_platform.db.session import create_engine_from_settings, create_session_factory
 from label_platform.domain.enums import UserRole
 
+pytest_plugins = ["tests.integration.fixtures"]
+
 
 @pytest.fixture
 def image_factory() -> Callable[..., Path]:
@@ -84,6 +86,9 @@ def api_context(tmp_path):
     settings = Settings(
         database_url=f"sqlite+pysqlite:///{tmp_path / 'api.db'}",
         managed_data_root=tmp_path / "managed",
+        label_studio_export_root=tmp_path / "labelstudio-exports",
+        unitrain_export_root=tmp_path / "unitrain-exports",
+        unitrain_mount_root=tmp_path / "unitrain-exports",
         session_secret="test-secret-with-at-least-32-characters",
         environment="test",
     )

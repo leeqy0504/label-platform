@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from label_platform.api.dependencies import SessionDependency, require_roles
 from label_platform.auth.passwords import hash_password
-from label_platform.db.models import User
+from label_platform.db.models import AuditEvent, User
 from label_platform.domain.enums import UserRole
 
 
 router = APIRouter(prefix="/api/admin/users", tags=["users"])
-AdminUser = Depends(require_roles(UserRole.ADMIN))
+AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 
 
 class UserResponse(BaseModel):
@@ -21,6 +24,8 @@ class UserResponse(BaseModel):
     name: str
     role: UserRole
     is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
 
 
 class UserCreate(BaseModel):
@@ -44,8 +49,8 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
 
 
-@router.get("", response_model=list[UserResponse], dependencies=[AdminUser])
-def list_users(session: SessionDependency) -> list[User]:
+@router.get("", response_model=list[UserResponse])
+def list_users(session: SessionDependency, _: AdminUser) -> list[User]:
     return list(session.scalars(select(User).order_by(User.created_at)).all())
 
 
@@ -53,9 +58,13 @@ def list_users(session: SessionDependency) -> list[User]:
     "",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[AdminUser],
 )
-def create_user(payload: UserCreate, session: SessionDependency) -> User:
+def create_user(
+    payload: UserCreate,
+    request: Request,
+    session: SessionDependency,
+    admin: AdminUser,
+) -> User:
     user = User(
         email=payload.email,
         name=payload.name,
@@ -65,6 +74,17 @@ def create_user(payload: UserCreate, session: SessionDependency) -> User:
     )
     session.add(user)
     try:
+        session.flush()
+        session.add(
+            AuditEvent(
+                actor_user_id=admin.id,
+                action="user.created",
+                resource_type="user",
+                resource_id=user.id,
+                details={"email": user.email, "role": user.role.value},
+                ip_address=request.client.host if request.client else None,
+            )
+        )
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -73,8 +93,14 @@ def create_user(payload: UserCreate, session: SessionDependency) -> User:
     return user
 
 
-@router.patch("/{user_id}", response_model=UserResponse, dependencies=[AdminUser])
-def update_user(user_id: str, payload: UserUpdate, session: SessionDependency) -> User:
+@router.patch("/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: str,
+    payload: UserUpdate,
+    request: Request,
+    session: SessionDependency,
+    admin: AdminUser,
+) -> User:
     user = session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -102,6 +128,16 @@ def update_user(user_id: str, payload: UserUpdate, session: SessionDependency) -
         user.role = payload.role
     if payload.is_active is not None:
         user.is_active = payload.is_active
+    session.add(
+        AuditEvent(
+            actor_user_id=admin.id,
+            action="user.updated",
+            resource_type="user",
+            resource_id=user.id,
+            details=payload.model_dump(exclude_none=True, mode="json"),
+            ip_address=request.client.host if request.client else None,
+        )
+    )
     session.commit()
     session.refresh(user)
     return user

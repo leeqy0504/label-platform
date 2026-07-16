@@ -1,7 +1,8 @@
 import mimetypes
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,7 +19,7 @@ from label_platform.datasets.publisher import (
     DatasetPublisher,
     PublicationResult,
 )
-from label_platform.db.models import Dataset, DatasetItem, DatasetVersion
+from label_platform.db.models import AuditEvent, Dataset, DatasetItem, DatasetVersion
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
 
@@ -38,6 +39,8 @@ class DatasetRegistrationRequest:
     source_version: str | None = None
     source_lineage: dict[str, object] = field(default_factory=dict)
     expected_fingerprint: str | None = None
+    parent_version_id: str | None = None
+    review_session_id: str | None = None
 
 
 class RegistrationService:
@@ -54,7 +57,8 @@ class RegistrationService:
 
     def register(self, request: DatasetRegistrationRequest) -> DatasetVersion:
         version = self._allocate_version(request)
-        publication: PublicationResult | None = None
+        if version.status is VersionStatus.READY:
+            return version
         try:
             source = adapt_source(
                 request.source_path,
@@ -70,6 +74,48 @@ class RegistrationService:
                 )
                 if current_fingerprint != request.expected_fingerprint:
                     raise DatasetRegistrationError("Source changed since analysis")
+        except Exception as exc:
+            self._fail_registration(version, request, None, exc)
+        return self._publish_source(version, request, source)
+
+    def register_source(
+        self,
+        request: DatasetRegistrationRequest,
+        source: SourceDataset,
+        *,
+        frozen_schema: list[dict[str, object]],
+    ) -> DatasetVersion:
+        version = self._allocate_version(request)
+        if version.status is VersionStatus.READY:
+            return version
+        return self._publish_source(version, request, source, frozen_schema=frozen_schema)
+
+    def record_invalid_version(
+        self,
+        request: DatasetRegistrationRequest,
+        error: Exception,
+    ) -> DatasetVersion:
+        version = self._allocate_version(request)
+        if version.status is VersionStatus.READY:
+            return version
+        self._mark_invalid(version.id, error)
+        with self.session_factory() as session:
+            stored = session.get(DatasetVersion, version.id)
+            if stored is None:
+                raise DatasetRegistrationError("Invalid dataset version was not persisted")
+            session.expunge(stored)
+            return stored
+
+    def _publish_source(
+        self,
+        version: DatasetVersion,
+        request: DatasetRegistrationRequest,
+        source: SourceDataset,
+        *,
+        frozen_schema: list[dict[str, object]] | None = None,
+    ) -> DatasetVersion:
+        publication: PublicationResult | None = None
+        try:
             canonical = normalize_source(
                 source,
                 split_seed=request.split_seed,
@@ -83,7 +129,7 @@ class RegistrationService:
                 dataset_id=request.dataset_id,
                 version_number=version.version_number,
                 version_id=version.id,
-                frozen_schema=class_schema,
+                frozen_schema=frozen_schema if frozen_schema is not None else class_schema,
             )
             return self._mark_ready(
                 version.id,
@@ -92,17 +138,26 @@ class RegistrationService:
                 publication.validation_report.as_dict(),
             )
         except Exception as exc:
-            if publication is not None:
-                self.publisher.rollback_publication(
-                    dataset_id=request.dataset_id,
-                    version_number=version.version_number,
-                    version_id=version.id,
-                    previous_version_number=self._parent_version_number(version.parent_id),
-                )
-            self._mark_invalid(version.id, exc)
-            if isinstance(exc, DatasetRegistrationError):
-                raise
-            raise DatasetRegistrationError(str(exc)) from exc
+            self._fail_registration(version, request, publication, exc)
+
+    def _fail_registration(
+        self,
+        version: DatasetVersion,
+        request: DatasetRegistrationRequest,
+        publication: PublicationResult | None,
+        error: Exception,
+    ) -> NoReturn:
+        if publication is not None:
+            self.publisher.rollback_publication(
+                dataset_id=request.dataset_id,
+                version_number=version.version_number,
+                version_id=version.id,
+                previous_version_number=self._parent_version_number(version.parent_id),
+            )
+        self._mark_invalid(version.id, error)
+        if isinstance(error, DatasetRegistrationError):
+            raise error
+        raise DatasetRegistrationError(str(error)) from error
 
     def _parent_version_number(self, parent_id: str | None) -> int | None:
         if parent_id is None:
@@ -119,25 +174,59 @@ class RegistrationService:
             )
             if dataset is None:
                 raise DatasetRegistrationError("Dataset not found")
+            if request.review_session_id is not None:
+                existing = session.scalar(
+                    select(DatasetVersion).where(
+                        DatasetVersion.review_session_id == request.review_session_id
+                    )
+                )
+                if existing is not None:
+                    if existing.status is VersionStatus.READY:
+                        session.expunge(existing)
+                        return existing
+                    existing.status = VersionStatus.BUILDING
+                    existing.root_path = None
+                    existing.manifest_path = None
+                    existing.annotation_path = None
+                    existing.class_schema = []
+                    existing.category_counts = {}
+                    existing.item_count = 0
+                    existing.annotation_count = 0
+                    existing.validation_result = {}
+                    session.flush()
+                    session.expunge(existing)
+                    return existing
             maximum = session.scalar(
                 select(func.max(DatasetVersion.version_number)).where(
                     DatasetVersion.dataset_id == dataset.id
                 )
             )
-            parent = session.scalar(
-                select(DatasetVersion)
-                .where(
-                    DatasetVersion.dataset_id == dataset.id,
-                    DatasetVersion.status == VersionStatus.READY,
+            if request.parent_version_id is not None:
+                parent = session.scalar(
+                    select(DatasetVersion).where(
+                        DatasetVersion.id == request.parent_version_id,
+                        DatasetVersion.dataset_id == dataset.id,
+                        DatasetVersion.status == VersionStatus.READY,
+                    )
                 )
-                .order_by(DatasetVersion.version_number.desc())
-                .limit(1)
-            )
+                if parent is None:
+                    raise DatasetRegistrationError("Review parent version is not ready")
+            else:
+                parent = session.scalar(
+                    select(DatasetVersion)
+                    .where(
+                        DatasetVersion.dataset_id == dataset.id,
+                        DatasetVersion.status == VersionStatus.READY,
+                    )
+                    .order_by(DatasetVersion.version_number.desc())
+                    .limit(1)
+                )
             version = DatasetVersion(
                 dataset_id=dataset.id,
                 version_number=(maximum or 0) + 1,
                 parent_id=parent.id if parent is not None else None,
                 status=VersionStatus.BUILDING,
+                review_session_id=request.review_session_id,
                 class_schema=[],
                 created_by_id=request.created_by_id,
             )
@@ -163,6 +252,12 @@ class RegistrationService:
 
             images = cast(list[dict[str, object]], canonical.coco["images"])
             annotations = cast(list[dict[str, object]], canonical.coco["annotations"])
+            annotation_counts_by_image = Counter(
+                cast(int, annotation["image_id"]) for annotation in annotations
+            )
+            category_counts = Counter(
+                cast(int, annotation["category_id"]) for annotation in annotations
+            )
             annotated_image_ids = {annotation["image_id"] for annotation in annotations}
             split_by_sample = {
                 sample_key: split
@@ -189,6 +284,7 @@ class RegistrationService:
                         status=(
                             "annotated" if image["id"] in annotated_image_ids else "unannotated"
                         ),
+                        annotation_count=annotation_counts_by_image[cast(int, image["id"])],
                         group_key=source.group_key,
                     )
                 )
@@ -196,11 +292,28 @@ class RegistrationService:
             version.manifest_path = "manifest.json"
             version.annotation_path = "annotations/instances.coco.json"
             version.class_schema = cast(list[dict[str, Any]], canonical.manifest["categories"])
+            version.category_counts = {
+                str(cast(int, category["id"])): category_counts[cast(int, category["id"])]
+                for category in version.class_schema
+            }
             version.item_count = len(images)
             version.annotation_count = len(annotations)
             version.validation_result = validation_result
             version.status = VersionStatus.READY
             session.flush()
+            session.add(
+                AuditEvent(
+                    actor_user_id=request.created_by_id,
+                    action="dataset.version_published",
+                    resource_type="version",
+                    resource_id=version.id,
+                    details={
+                        "dataset_id": version.dataset_id,
+                        "version_number": version.version_number,
+                        "review_session_id": request.review_session_id,
+                    },
+                )
+            )
             session.refresh(version)
             session.expunge(version)
             return version

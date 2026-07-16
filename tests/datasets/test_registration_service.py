@@ -1,3 +1,5 @@
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -63,12 +65,53 @@ def test_registration_persists_ready_v1_and_items(
     assert version.manifest_path == "manifest.json"
     assert version.annotation_path == "annotations/instances.coco.json"
     assert version.class_schema == [{"id": 1, "name": "cargo"}]
+    assert version.category_counts == {"1": 0}
     assert version.validation_result["valid"] is True
     with session_factory() as session:
         items = list(session.scalars(select(DatasetItem).where(DatasetItem.version_id == version.id)))
     assert len(items) == 2
     assert {item.status for item in items} == {"unannotated"}
+    assert {item.annotation_count for item in items} == {0}
     assert {item.split for item in items}.issubset({"train", "val", "test"})
+
+
+def test_registration_persists_category_and_per_item_annotation_counts(
+    registration_context,
+    image_factory,
+    tmp_path,
+):
+    service, session_factory, creator, dataset_id = registration_context
+    source = tmp_path / "coco-source"
+    image_factory(source / "frame.jpg", size=(20, 10))
+    (source / "annotations.json").write_text(
+        json.dumps(
+            {
+                "images": [{"id": 3, "file_name": "frame.jpg", "width": 20, "height": 10}],
+                "categories": [{"id": 7, "name": "cargo"}],
+                "annotations": [
+                    {
+                        "id": annotation_id,
+                        "image_id": 3,
+                        "category_id": 7,
+                        "bbox": [1, 1, 5, 5],
+                        "area": 25,
+                        "iscrowd": 0,
+                        "segmentation": [[1, 1, 6, 1, 6, 6, 1, 6]],
+                    }
+                    for annotation_id in (11, 12)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    version = service.register(request_for(source, creator.id, dataset_id))
+
+    assert version.category_counts == {"1": 2}
+    with session_factory() as session:
+        item = session.scalar(select(DatasetItem).where(DatasetItem.version_id == version.id))
+        assert item is not None
+        assert item.annotation_count == 2
 
 
 def test_registration_allocates_v2_with_ready_parent(
@@ -87,6 +130,31 @@ def test_registration_allocates_v2_with_ready_parent(
     assert second.version_number == 2
     assert second.parent_id == first.id
     assert second.status is VersionStatus.READY
+
+
+def test_review_registration_reuses_its_ready_child_version(
+    registration_context,
+    image_factory,
+    tmp_path,
+):
+    service, _, creator, dataset_id = registration_context
+    source = tmp_path / "source"
+    image_factory(source / "frame.jpg")
+    first = service.register(request_for(source, creator.id, dataset_id))
+    review_request = replace(
+        request_for(source, creator.id, dataset_id),
+        parent_version_id=first.id,
+        review_session_id="review-1",
+        source_lineage={"review_session_id": "review-1"},
+    )
+
+    published = service.register(review_request)
+    repeated = service.register(review_request)
+
+    assert published.version_number == 2
+    assert published.parent_id == first.id
+    assert published.review_session_id == "review-1"
+    assert repeated.id == published.id
 
 
 def test_registration_failure_marks_version_invalid_without_publishing(

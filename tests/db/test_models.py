@@ -9,8 +9,18 @@ from label_platform.db.models import (
     DatasetItem,
     DatasetSource,
     DatasetVersion,
+    ReviewSession,
+    ReviewTaskBinding,
+    TrainingRun,
 )
-from label_platform.domain.enums import JobStatus, SourceFormat, TaskType, VersionStatus
+from label_platform.domain.enums import (
+    JobStatus,
+    ReviewStatus,
+    SourceFormat,
+    TaskType,
+    TrainingStatus,
+    VersionStatus,
+)
 
 
 def test_dataset_version_keeps_schema_and_parent(db_session, user, allowed_root):
@@ -173,3 +183,80 @@ def test_version_number_is_unique_within_a_dataset(db_session, user):
 
     with pytest.raises(IntegrityError):
         db_session.commit()
+
+
+def test_review_session_binds_label_studio_tasks_to_input_items(db_session, user):
+    dataset = Dataset(name="review-model", description="", created_by_id=user.id)
+    version = DatasetVersion(
+        dataset=dataset,
+        version_number=1,
+        status=VersionStatus.READY,
+        class_schema=[{"id": 1, "name": "cargo"}],
+    )
+    item = DatasetItem(
+        version=version,
+        sample_key="sample-1",
+        relative_path="images/frame.jpg",
+        media_type="image/jpeg",
+        width=20,
+        height=10,
+        file_size=100,
+        sha256="a" * 64,
+        split="train",
+        status="annotated",
+    )
+    review = ReviewSession(
+        dataset=dataset,
+        input_version=version,
+        label_studio_base_url="http://127.0.0.1:8081",
+        idempotency_key="review-model-v1",
+        status=ReviewStatus.IMPORTING,
+        recoverable_status=ReviewStatus.IMPORTING,
+        config_hash="b" * 64,
+        created_by_id=user.id,
+    )
+    binding = ReviewTaskBinding(
+        review_session=review,
+        dataset_item=item,
+        sample_key=item.sample_key,
+        label_studio_task_id=41,
+    )
+    db_session.add(binding)
+    db_session.commit()
+
+    assert review.input_version_id == version.id
+    assert review.task_bindings == [binding]
+    assert binding.dataset_item is item
+    assert review.status is ReviewStatus.IMPORTING
+
+
+def test_training_run_binds_ready_version_to_external_run(db_session, user):
+    dataset = Dataset(name="training-model", description="", created_by_id=user.id)
+    version = DatasetVersion(
+        dataset=dataset,
+        version_number=2,
+        status=VersionStatus.READY,
+        class_schema=[{"id": 1, "name": "cargo"}],
+    )
+    run = TrainingRun(
+        dataset=dataset,
+        dataset_version=version,
+        unitrain_run_id="unitrain-run-7",
+        idempotency_key="training-model-v2",
+        name="baseline",
+        task_type=TaskType.DETECTION,
+        export_profile="unitrain-coco-split-v1",
+        config={"epochs": 10},
+        status=TrainingStatus.RUNNING,
+        current_epoch=2,
+        total_epochs=10,
+        external_detail_url="http://unitrain.test/runs/unitrain-run-7",
+        metric_summary={"mAP50": 0.5},
+        created_by_id=user.id,
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    assert run.dataset_version is version
+    assert run.dataset is dataset
+    assert run.metric_summary == {"mAP50": 0.5}

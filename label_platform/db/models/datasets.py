@@ -71,7 +71,9 @@ class DatasetVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     root_path: Mapped[str | None] = mapped_column(Text)
     manifest_path: Mapped[str | None] = mapped_column(Text)
     annotation_path: Mapped[str | None] = mapped_column(Text)
+    review_session_id: Mapped[str | None] = mapped_column(String(36), unique=True, index=True)
     class_schema: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    category_counts: Mapped[dict[str, int]] = mapped_column(JSON, default=dict, nullable=False)
     item_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     annotation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[VersionStatus] = mapped_column(
@@ -116,6 +118,7 @@ class DatasetItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     split: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    annotation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     group_key: Mapped[str | None] = mapped_column(String(255))
 
     version: Mapped[DatasetVersion] = relationship(back_populates="items")
