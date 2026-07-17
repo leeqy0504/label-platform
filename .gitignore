@@ -13,3 +13,7 @@ node_modules/
 dist/
 .env
 var/
+data/
+vendors/
+outputs/
+weights/

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,9 @@ from label_platform.integrations.labelstudio import create_label_studio_connecto
 from label_platform.integrations.unitrain import create_unitrain_connector
 from label_platform.reviews.service import ReviewWorkflow
 from label_platform.training.service import TrainingWorkflow
+
+
+logger = logging.getLogger(__name__)
 
 
 class JobRunner:
@@ -310,10 +314,13 @@ class JobRunner:
         return self.log_root / f"{job_id}.log"
 
     def _append_log(self, job_id: str, message: str) -> None:
-        self.log_root.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).isoformat()
-        with self._log_path(job_id).open("a", encoding="utf-8") as log:
-            log.write(f"{timestamp} {message}\n")
+        try:
+            self.log_root.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).isoformat()
+            with self._log_path(job_id).open("a", encoding="utf-8") as log:
+                log.write(f"{timestamp} {message}\n")
+        except OSError as exc:
+            logger.warning("Could not write background job log %s: %s", job_id, exc)
 
 
 def run_analysis_job(job_id: str) -> None:

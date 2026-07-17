@@ -1,0 +1,3 @@
+[submodule "vendors/rf-detr"]
+	path = vendors/rf-detr
+	url = https://github.com/roboflow/rf-detr.git
