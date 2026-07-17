@@ -529,7 +529,88 @@ docker compose build --no-cache web
 docker compose up -d web
 ```
 
-薄 `unitrain-api` 在线只代表 HTTP 接口与鉴权正常。实际训练还需要在 GPU 训练主机准备 `.venv-yolo` 或 `.venv-rfdetr`、CUDA/驱动和共享的 `UNITRAIN_EXPORT_PATH`；当前 Compose API 镜像不自动安装训练框架环境。
+### 8. 使用宿主机 GPU UnitTrain
+
+Compose 中的薄 `unitrain-api` 不包含宿主机未提交到 Git 的 `.venv-yolo`、`.venv-rfdetr` 和 GPU 运行环境。训练环境安装在平台所在宿主机时，应让 API/worker 容器连接宿主机原生运行的 UnitTrain API，而不是启动 `unitrain-api` Compose profile。
+
+先确认框架环境位于仓库根目录并能独立训练：
+
+```bash
+test -x .venv-yolo/bin/python && echo yolo-ready
+test -x .venv-rfdetr/bin/python && echo rfdetr-ready
+nvidia-smi
+```
+
+停止容器版 UnitTrain API，避免占用宿主机 `8090`：
+
+```bash
+docker compose --profile unitrain stop unitrain-api
+```
+
+设置 `.env`。`PLATFORM_UNITRAIN_MOUNT_ROOT` 必须是宿主机可见的绝对导出路径，因为平台会把该路径提交给原生 UnitTrain 进程：
+
+```dotenv
+PLATFORM_UNITRAIN_URL=http://host.docker.internal:8090
+PLATFORM_UNITRAIN_MOUNT_ROOT=/absolute/path/to/label-platform/var/unitrain/exports
+PLATFORM_UNITRAIN_API_TOKEN=<shared-token>
+
+UNITRAIN_API_RUN_ROOT=/absolute/path/to/label-platform/var/unitrain/runs
+UNITRAIN_API_API_TOKEN=<same-shared-token>
+UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090
+UNITRAIN_API_HOST=0.0.0.0
+UNITRAIN_API_PORT=8090
+```
+
+如果 `var/unitrain/runs` 曾由 Compose 容器创建，可在没有 `sudo` 的服务器上把目录归还给当前宿主机用户：
+
+```bash
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+docker compose --profile unitrain run --rm --no-deps \
+  --user 0:0 \
+  --entrypoint sh \
+  unitrain-api \
+  -c "chown -R ${HOST_UID}:${HOST_GID} /data/runs"
+```
+
+从仓库根目录启动原生服务：
+
+```bash
+mkdir -p var/unitrain/runs
+nohup uv run unitrain-api > var/unitrain/unitrain-api.log 2>&1 &
+echo $!
+```
+
+Compose 已为平台容器配置 `host.docker.internal:host-gateway`。重新创建 API/worker 以加载新地址和宿主机路径，不要重新启动 `unitrain-api` profile：
+
+```bash
+docker compose up -d --force-recreate api worker
+```
+
+验证完整通路，命令不会输出 Token：
+
+```bash
+docker compose exec -T api python -c '
+from label_platform.config import Settings
+from label_platform.integrations.unitrain import create_unitrain_connector
+s = Settings()
+print("url:", s.unitrain_url)
+print("mount_root:", s.unitrain_mount_root)
+c = create_unitrain_connector(s)
+print("version:", c.health())
+c.close()
+'
+```
+
+预期 URL 为 `http://host.docker.internal:8090`，mount root 为宿主机绝对路径。训练失败时同时查看平台 worker 和原生 UnitTrain 日志：
+
+```bash
+docker compose logs --tail=200 worker
+tail -n 200 var/unitrain/unitrain-api.log
+find var/unitrain/runs -maxdepth 2 -name run.log -print
+```
+
+平台正式数据集仍保存在 `var/managed/<dataset-id>/versions/vN`。提交训练时会生成只读派生包 `var/unitrain/exports/<version-id>/unitrain-coco-split-v1`，原生 UnitTrain 只读取派生包，不修改正式版本。
 
 ## Backup and restore
 

@@ -16,7 +16,7 @@ x-platform-environment: &platform-environment
   PLATFORM_UNITRAIN_URL: ${PLATFORM_UNITRAIN_URL:-http://host.docker.internal:8090}
   PLATFORM_UNITRAIN_API_TOKEN: ${PLATFORM_UNITRAIN_API_TOKEN:-}
   PLATFORM_UNITRAIN_EXPORT_ROOT: /data/unitrain/exports
-  PLATFORM_UNITRAIN_MOUNT_ROOT: /datasets
+  PLATFORM_UNITRAIN_MOUNT_ROOT: ${PLATFORM_UNITRAIN_MOUNT_ROOT:-/datasets}
   PLATFORM_UNITRAIN_TIMEOUT_SECONDS: ${PLATFORM_UNITRAIN_TIMEOUT_SECONDS:-120}
 
 x-platform-service: &platform-service
@@ -24,6 +24,8 @@ x-platform-service: &platform-service
     context: .
     dockerfile: deploy/api.Dockerfile
   environment: *platform-environment
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   volumes:
     - ${SOURCE_DATA_PATH:-./var/sources}:/data/sources:ro
     - ${MANAGED_DATA_PATH:-./var/managed}:/data/managed:rw

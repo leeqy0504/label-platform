@@ -154,3 +154,26 @@ def test_http_contract_auth_validation_and_pagination(tmp_path):
         bad = dict(payload)
         bad["dataset_path"] = "relative/path"
         assert client.post("/runs", json=bad, headers=headers).status_code == 422
+
+
+def test_http_create_run_reports_storage_errors(tmp_path, monkeypatch):
+    settings = UnitTrainAPISettings(run_root=tmp_path / "runs", api_token="secret-token")
+    manager = RunManager(settings, launcher=FakeLauncher(), project_root=tmp_path)
+
+    def fail_create_run(_payload):
+        raise PermissionError(13, "Permission denied", "/data/runs")
+
+    monkeypatch.setattr(manager, "create_run", fail_create_run)
+    app = create_app(settings, manager=manager)
+    headers = {"Authorization": "Bearer secret-token"}
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/runs",
+            json=make_payload(tmp_path / "dataset").model_dump(mode="json"),
+            headers=headers,
+        )
+
+    assert response.status_code == 500
+    assert response.json()["detail"].startswith("UnitTrain storage error:")
+    assert "/data/runs" in response.json()["detail"]

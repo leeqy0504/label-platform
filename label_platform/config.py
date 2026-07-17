@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     secure_cookies: bool = False
     environment: Literal["development", "test", "production"] = "development"
     label_studio_url: str = "http://127.0.0.1:8081"
+    label_studio_public_url: str = "http://127.0.0.1:8081"
     label_studio_api_token: str = ""
     label_studio_mount_root: Path = Path("/datasets")
     label_studio_export_root: Path = Path("./var/labelstudio/exports")

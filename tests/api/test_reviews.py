@@ -17,6 +17,8 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
     api_context,
 ):
     settings, session_factory = api_context
+    settings.label_studio_url = "http://label-studio:8080"
+    settings.label_studio_public_url = "https://labels.example.test"
     with session_factory() as session, session.begin():
         user = session.scalar(select(User).where(User.email == "engineer@example.test"))
         assert user is not None
@@ -77,7 +79,9 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
     completed = authenticated_client.post(f"/api/reviews/{review_id}/complete")
 
     assert detail.status_code == 200
-    assert detail.json()["label_studio_project_url"].endswith("/projects/17/data")
+    assert detail.json()["label_studio_project_url"] == (
+        "https://labels.example.test/projects/17/data"
+    )
     assert health.json() == {"status": "online", "version": "1.13.1"}
     assert completed.status_code == 202
     assert completed.json()["status"] == "exporting"

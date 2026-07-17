@@ -103,7 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     managed_root=settings.managed_data_root,
                     export_root=settings.label_studio_export_root,
                     label_studio_mount_root=settings.label_studio_mount_root,
-                    label_studio_base_url=settings.label_studio_url,
+                    label_studio_base_url=settings.label_studio_public_url,
                     connector=label_studio,
                 ),
                 training_workflow=TrainingWorkflow(

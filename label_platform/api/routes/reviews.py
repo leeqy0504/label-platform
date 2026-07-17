@@ -66,7 +66,7 @@ def _workflow(request: Request) -> ReviewWorkflow:
         managed_root=settings.managed_data_root,
         export_root=settings.label_studio_export_root,
         label_studio_mount_root=settings.label_studio_mount_root,
-        label_studio_base_url=settings.label_studio_url,
+        label_studio_base_url=settings.label_studio_public_url,
         connector=cast(LabelStudioConnector, request.app.state.label_studio_connector),
     )
 
