@@ -9,6 +9,238 @@
 - Docker with Compose v2 for PostgreSQL/Redis or the full local stack
 - Label Studio 1.13.1 is configured separately; UniTrain 本地训练环境暂不要求安装
 
+## 平台数据集导入规范
+
+平台登记的是一个**服务器目录**，不是单独的 JSON 文件。管理员需要先在“系统管理”中把数据所在的上级目录配置为允许读取的来源根目录；登记时选择该根目录下的数据集目录，然后先执行“分析目录”，分析通过后才能登记。
+
+平台支持以下四种来源：
+
+| 来源 | 标注文件 | 用途 |
+|------|----------|------|
+| Image Directory | 无 | 只有图片、尚未标注的数据集 |
+| COCO Detection | 一个 COCO JSON | 目标检测框 |
+| COCO Instance Segmentation | 一个 COCO JSON | 多边形或 RLE 实例掩码 |
+| Label Studio Export | 一个 JSON 或 ZIP | Label Studio 原生导出或 COCO 导出 |
+
+YOLO TXT、YOLO OBB 和自定义 YOLO JSON 不是平台导入格式，必须先转换为下面定义的单文件 COCO 格式。平台不会读取 `labels/*.txt`，也不会把包含 `bbox_xyxy` 的自定义 JSON 自动转换成 COCO。
+
+### 所有来源的共同要求
+
+- 数据集必须是一个真实目录，并位于管理员配置的允许来源根目录内。前端中选择目录，不选择标注文件。
+- 目录及其子目录不能包含符号链接；媒体必须是普通文件。路径必须使用 `/`，不能使用绝对路径、`..` 或反斜杠。
+- 支持的图片扩展名为 `.jpg`、`.jpeg`、`.png`、`.webp`，大小写不敏感。每张图片必须能够正常解码。
+- 一个数据集目录只能有**一个可识别的标注源**：一个 COCO JSON、一个 Label Studio JSON，或一个 Label Studio ZIP。多个 `train.json`、`val.json`、备份 `.json` 或 JSON 与 ZIP 并存会报 `directory contains multiple supported annotation sources`。
+- JSON 必须是 UTF-8。需要保留旧标注文件时，应移出数据集目录，或使用不以 `.json` 结尾的名称，例如 `annotations.original.json.bak`。
+- 图片引用必须指向所选数据集目录内实际存在的文件；同一图片路径不能重复。文件名相同但位于不同子目录是允许的。
+- 分析后、登记前不要修改图片或标注。平台会校验分析指纹，内容发生变化时需要重新分析。
+- 目录中的其他普通文件不会参与数据集，但会在分析结果中列为不支持文件。
+
+### 纯图片目录
+
+适合尚未标注的数据。图片可以直接放在根目录，也可以任意分层：
+
+```text
+dataset/
+├── camera-a/
+│   ├── 00001.jpg
+│   └── 00002.jpg
+└── camera-b/
+    └── 00001.png
+```
+
+目录内不能同时存在可识别的 COCO、Label Studio JSON 或 ZIP，否则平台会按标注数据集处理。登记时必须在“初始类别”中填写至少一个非空、互不重复的类别，并选择“目标检测”或“实例分割”；纯图片数据登记后的标注数为 0。
+
+如果目录中存在自定义 `annotations.json`，但它不是 COCO 对象或 Label Studio 任务数组，平台可能仍把目录识别为 Image Directory 并显示 0 个标注。这不表示自定义标注已成功导入。
+
+### COCO Detection
+
+推荐结构如下。标注文件名和所在子目录可以不同，但整个数据集目录中只能有一个 COCO JSON：
+
+```text
+dataset/
+├── images/
+│   ├── 00001.jpg
+│   └── 00002.jpg
+└── annotations.json
+```
+
+可直接导入的最小完整示例：
+
+```json
+{
+  "info": {
+    "description": "mouse detection dataset"
+  },
+  "images": [
+    {
+      "id": 1,
+      "file_name": "images/00001.jpg",
+      "width": 640,
+      "height": 480
+    },
+    {
+      "id": 2,
+      "file_name": "images/00002.jpg",
+      "width": 640,
+      "height": 480
+    }
+  ],
+  "annotations": [
+    {
+      "id": 1,
+      "image_id": 1,
+      "category_id": 1,
+      "bbox": [305, 116, 151, 128],
+      "area": 19328,
+      "iscrowd": 0
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "mouse"
+    }
+  ]
+}
+```
+
+COCO 字段约束：
+
+- 根对象必须包含 `images`、`annotations`、`categories` 三个数组。`images` 和 `categories` 不能为空；允许存在未标注图片，因此 `annotations` 可以为空。
+- `images[].id`、`annotations[].id`、`categories[].id` 必须存在且在各自数组中唯一。类别 ID 可以从 0 或 1 开始，平台登记时会重新映射为从 1 开始的连续 ID。
+- `images[].file_name` 是相对于**所选数据集根目录**的 POSIX 路径，不是相对于 JSON 文件的路径。上例必须能解析到 `dataset/images/00001.jpg`。
+- `images[].width` 和 `height` 可以省略；如果提供，必须与图片解码后的真实尺寸完全一致。
+- `annotations[].image_id` 和 `category_id` 必须分别引用已存在的图片和类别。
+- 检测框必须使用 COCO 的 `[x, y, width, height]`，不是 `[x1, y1, x2, y2]`。四个值必须有限，`width`、`height` 必须大于 0，框不能超出图片边界。
+- `area` 和 `iscrowd` 可以提供；平台会根据规范化后的几何重新生成它们。
+- 类别名称必须是非空且互不重复的字符串。COCO 数据的类别来自 `categories`，前端“初始类别”和“任务类型”不会覆盖 COCO 文件中的定义。
+
+以下路径是正确的：
+
+```json
+{"file_name": "images/00001.jpg"}
+```
+
+以下路径会失败，除非这些层级确实位于所选数据集目录内：
+
+```json
+{"file_name": "output/mouse008/detection_dataset/images/00001.jpg"}
+```
+
+目录名不强制必须叫 `images`；`image/00001.jpg` 也可以，但 JSON 中的 `file_name` 必须与磁盘上的真实目录名完全一致。
+
+### COCO Instance Segmentation
+
+目录要求与 COCO Detection 相同。当任意标注包含非空 `segmentation` 时，整个来源会被识别为实例分割数据集，此时每条标注都必须具有有效的实例掩码，不能混入只有 `bbox` 的检测标注。
+
+多边形示例：
+
+```json
+{
+  "id": 1,
+  "image_id": 1,
+  "category_id": 1,
+  "bbox": [10, 20, 100, 80],
+  "segmentation": [
+    [10, 20, 110, 20, 110, 100, 10, 100]
+  ],
+  "area": 8000,
+  "iscrowd": 0
+}
+```
+
+`segmentation` 支持：
+
+- COCO 多边形数组。每个多边形至少 3 个点，即至少 6 个有限数字，并且坐标数量必须为偶数。
+- COCO RLE 对象：`{"size": [height, width], "counts": ...}`。`size` 必须与真实图片尺寸一致，`counts` 支持未压缩数组或压缩字符串。
+
+掩码必须非空、尺寸正确且位于图片范围内。平台会从掩码重新计算 `bbox` 和 `area`。
+
+### Label Studio 导出
+
+平台支持以下导出内容：
+
+- Label Studio 原生 JSON 任务数组。
+- 包含原生 JSON 的 ZIP；优先查找 `result.json`。
+- Label Studio 的 COCO JSON 对象。
+- 包含 COCO JSON 的 ZIP；优先查找 `result_coco.json`。
+
+推荐目录：
+
+```text
+dataset/
+├── images/
+│   ├── 00001.jpg
+│   └── 00002.jpg
+└── result.json
+```
+
+原生 JSON 的关键结构如下：
+
+```json
+[
+  {
+    "id": 1,
+    "data": {
+      "image": "images/00001.jpg",
+      "split": "train",
+      "group_key": "video-001"
+    },
+    "annotations": [
+      {
+        "result": [
+          {
+            "type": "rectanglelabels",
+            "original_width": 640,
+            "original_height": 480,
+            "value": {
+              "x": 10,
+              "y": 20,
+              "width": 25,
+              "height": 30,
+              "rectanglelabels": ["mouse"]
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+Label Studio 约束：
+
+- 每个任务必须有 `data.image`，并能解析到导出 JSON/ZIP 所在目录下的本地图片。支持普通相对路径和 `/data/local-files/?d=...` 引用；外部 HTTP/HTTPS 图片 URL 不支持。
+- ZIP 只承载标注 JSON，图片仍应作为 ZIP 外部文件放在同一个数据集目录中；ZIP 解压后总大小上限为 512 MiB。
+- 支持 `rectanglelabels`、`polygonlabels`、`brushlabels`；其他结果类型会被忽略。每个受支持结果必须且只能包含一个类别标签。
+- `rectanglelabels` 的 `x`、`y`、`width`、`height` 和 `polygonlabels` 的点坐标是 Label Studio 的百分比坐标。
+- `original_width`、`original_height` 必须与真实图片尺寸一致。Brush RLE 的尺寸也必须匹配。
+- 一个任务有多次标注时，平台使用最后一个未取消的 annotation；没有有效 annotation 的任务仍会作为未标注图片导入。
+- 类别默认从有效结果中发现。完全未标注的原生导出必须在前端“初始类别”中提供类别；一旦提供，导出中的所有标签必须属于该列表。COCO 导出的类别仍以 COCO `categories` 为准。
+- `data.group_key` 或 `data.episode_id` 可用于把同一序列保持在同一个数据切分中。
+
+### 数据切分
+
+平台登记时生成 `train`、`val`、`test` 切分。当前前端固定使用 `80% / 20% / 0%` 和种子 `42`，对相同内容会得到稳定结果。
+
+- COCO 可在 `images[]` 中使用可选字段 `split: "train" | "val" | "test"` 和 `group_key`。
+- Label Studio 原生导出可在 `data` 中使用 `split`，以及 `group_key` 或 `episode_id`。
+- 同一个 `group_key`/`episode_id` 的图片不会被拆到不同切分；同一组内不能声明冲突的显式 `split`。
+- 平台**不会**根据 `images/train/`、`images/val/` 的目录名推断切分。没有显式 `split` 时，按种子和比例重新分配。
+- 平台导入不接受 `annotations/train.json` 与 `annotations/val.json` 两个 COCO 标注源。需要先合并为一个 COCO JSON，并通过 `images[].split` 保留原切分。
+
+### 常见导入错误
+
+| 错误 | 原因与处理 |
+|------|------------|
+| `directory contains multiple supported annotation sources` | 目录中有多个 COCO/Label Studio JSON 或 ZIP。只保留一个；备份不要以 `.json` 结尾。 |
+| `source image file does not exist` | `file_name` 或 `data.image` 无法从所选数据集根目录解析。改成实际相对路径，例如 `images/00001.jpg`。 |
+| `source directory must contain exactly one COCO annotation file` | 没有找到完整 COCO 对象，或找到多个包含 `images`、`annotations`、`categories` 的 JSON。 |
+| `bbox width and height must be positive` | 把 `[x1, y1, x2, y2]` 误当成 COCO bbox，或宽高为 0/负数。转换为 `[x1, y1, x2-x1, y2-y1]`。 |
+| `bbox must stay inside image bounds` | 框的坐标或宽高超过真实图片尺寸。 |
+| `image ... width/height does not match the image file` | JSON 声明尺寸与图片解码后的真实尺寸不一致。修正或删除可选的宽高字段。 |
+| 分析显示 `Image Directory`、标注为 0 | 标注文件不是受支持的 COCO/Label Studio 结构。先转换格式，不要直接登记。 |
+
 ## Native development
 
 ```bash
@@ -65,37 +297,239 @@ UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090 \
 
 服务提供 `/runs`、日志、指标、停止和模型查询接口。真正提交训练前，仍需在 UniTrain 主机上按原项目方式准备 `.venv-yolo` 或 `.venv-rfdetr`；当前电脑无需为平台开发安装它们。平台先将 READY 版本原子物化为只读 `unitrain-coco-split-v1` 派生包，再通过 REST 提交，canonical 版本不会被训练进程修改。
 
-## Compose stack
+## 新服务器 Compose 部署
+
+以下流程适用于一台只授予当前用户 Docker 权限、没有 `sudo` 权限的新 Linux 服务器。命令均在仓库根目录执行。Compose 包含 PostgreSQL、Redis、平台 API、RQ worker、Web、Label Studio 和薄 UnitTrain API。
+
+### 1. 准备配置
 
 ```bash
 cp .env.example .env
-mkdir -p var/sources var/managed
-docker compose up --build -d
-docker compose exec api label-platform create-admin --email admin@example.test --name Administrator
+openssl rand -hex 32  # 生成 PLATFORM_SESSION_SECRET
+openssl rand -hex 32  # 生成 PLATFORM_UNITRAIN_API_TOKEN
 ```
 
-访问 `http://127.0.0.1:8080`。Compose 包含 PostgreSQL 16、Redis 7、API、一个 RQ worker 和 Nginx 静态前端。`var/sources` 在 API/worker 中只读，`var/managed` 读写。在 Linux 主机上若容器无法写入 managed 目录，将该目录所有者设置为镜像内 `platform` 用户（UID/GID 999）。
+至少修改 `.env` 中的以下配置，不要提交该文件：
 
-可选的薄 UniTrain API 服务可用 `docker compose --profile unitrain up --build -d` 启动；该镜像同样不预装 YOLO/RF-DETR 训练环境。实际训练主机配置完成后，将 `PLATFORM_UNITRAIN_URL` 和共享的 `UNITRAIN_EXPORT_PATH` 指向该服务即可。
+```dotenv
+POSTGRES_DB=platform
+POSTGRES_USER=platform
+POSTGRES_PASSWORD=<strong-database-password>
 
-Label Studio 容器可用 `docker compose --profile integrations up -d label-studio` 启动。完成首次登录并创建 API Token 后，仍需把 Token 配置到平台环境变量。生产环境应使用独立内部主机名和 TLS 反向代理，不共用平台会话 Cookie。
+PLATFORM_SESSION_SECRET=<first-random-value>
+PLATFORM_ENVIRONMENT=production
+PLATFORM_SECURE_COOKIES=false
 
-常用运维命令：
+# API/worker 在 Docker 网络中访问 Label Studio 的内部地址。
+PLATFORM_LABEL_STUDIO_URL=http://label-studio:8080
+# 浏览器跳转地址。使用 SSH 隧道时保持 127.0.0.1；有反向代理时填写 HTTPS 域名。
+PLATFORM_LABEL_STUDIO_PUBLIC_URL=http://127.0.0.1:8081
+PLATFORM_LABEL_STUDIO_API_TOKEN=
+
+PLATFORM_UNITRAIN_URL=http://unitrain-api:8090
+PLATFORM_UNITRAIN_API_TOKEN=<second-random-value>
+UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090
+
+SOURCE_DATA_PATH=./var/sources
+MANAGED_DATA_PATH=./var/managed
+JOB_LOG_PATH=./var/logs/jobs
+LABEL_STUDIO_EXPORT_PATH=./var/labelstudio/exports
+LABEL_STUDIO_APP_PATH=./var/labelstudio/app
+UNITRAIN_EXPORT_PATH=./var/unitrain/exports
+UNITRAIN_RUN_PATH=./var/unitrain/runs
+```
+
+`PLATFORM_LABEL_STUDIO_URL` 与 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 用途不同：前者必须能从 API/worker 容器访问，后者必须能从操作者的浏览器访问。生产环境启用 HTTPS 后应把 `PLATFORM_SECURE_COOKIES` 改为 `true`。
+
+### 2. 准备持久化目录
 
 ```bash
-docker compose ps
-docker compose logs -f api worker
-docker compose exec api alembic upgrade head
-docker compose down
+mkdir -p \
+  var/sources \
+  var/managed \
+  var/logs/jobs \
+  var/labelstudio/app \
+  var/labelstudio/exports \
+  var/unitrain/exports \
+  var/unitrain/runs
 ```
 
-建议每 5 分钟从受管的 cron/systemd timer 执行一次外部状态对账：
+先构建平台镜像并拉取集成镜像：
 
 ```bash
-uv run label-platform reconcile
+docker compose --profile integrations --profile unitrain build
+docker compose --profile integrations pull label-studio
 ```
 
-命令只处理非终态审核会话和训练 run。某个外部服务离线时保留本地最后状态，并在输出中报告错误，下一次执行可继续对账。
+没有 `sudo` 时，使用一次性 root 容器设置挂载目录权限。平台目录属于镜像内的 `platform` 用户，Label Studio 数据目录属于 UID/GID 1001：
+
+```bash
+docker compose run --rm --no-deps \
+  --user 0:0 \
+  --entrypoint sh \
+  worker \
+  -c 'chown -R platform:platform \
+        /data/managed \
+        /data/logs/jobs \
+        /data/labelstudio/exports \
+        /data/unitrain/exports'
+
+docker compose --profile integrations run --rm --no-deps \
+  --user 0:0 \
+  --entrypoint sh \
+  label-studio \
+  -c 'mkdir -p /label-studio/data/media && \
+      chown -R 1001:1001 /label-studio/data && \
+      chmod -R u+rwX /label-studio/data'
+
+docker compose --profile unitrain run --rm --no-deps \
+  --user 0:0 \
+  --entrypoint sh \
+  unitrain-api \
+  -c 'chown -R platform:platform /data/runs'
+```
+
+这些权限保存在宿主机 bind mount 中，普通 `build`、`up`、`down` 或容器重建不会重置。只有删除 `var/`、更换路径、迁移服务器或更改容器 UID 时才需要重新执行。
+
+### 3. 首次启动 Label Studio
+
+先只启动依赖和 Label Studio：
+
+```bash
+docker compose up -d postgres redis
+docker compose --profile integrations up -d label-studio
+docker compose ps -a
+docker compose logs --tail=100 label-studio
+curl -fsS http://127.0.0.1:8081/health
+```
+
+如果端口只绑定服务器回环地址，在操作者电脑上建立隧道：
+
+```bash
+ssh -N \
+  -L 8080:127.0.0.1:8080 \
+  -L 8081:127.0.0.1:8081 \
+  -L 8090:127.0.0.1:8090 \
+  <server>
+```
+
+浏览器打开 `http://127.0.0.1:8081`，创建 Owner/管理员账号并生成 Legacy API Token。当前连接器不能直接使用声明为 `token_type: refresh` 的 JWT refresh token。将新 Token 写入 `.env`：
+
+```dotenv
+PLATFORM_LABEL_STUDIO_API_TOKEN=<legacy-api-token>
+```
+
+Token、数据库密码和 Session Secret 一旦出现在聊天、日志或工单中，应立即撤销并轮换。
+
+### 4. 启动完整服务
+
+Compose 会自动执行数据库迁移：
+
+```bash
+docker compose \
+  --profile integrations \
+  --profile unitrain \
+  up -d --build
+
+docker compose ps -a
+```
+
+首次部署创建平台管理员，命令会交互式要求输入两次不少于 8 位的密码：
+
+```bash
+docker compose exec api \
+  label-platform create-admin \
+  --email admin@example.com \
+  --name Administrator
+```
+
+修改 `.env` 后，`docker compose restart` 不会刷新容器环境变量，必须重新创建相关服务：
+
+```bash
+docker compose --profile unitrain \
+  up -d --force-recreate api worker unitrain-api
+```
+
+### 5. 部署验收
+
+确认平台实际加载的是 Docker 内部服务地址，且 Token 只检查是否存在，不输出内容：
+
+```bash
+docker compose exec -T api python -c '
+from label_platform.config import Settings
+s = Settings()
+print("label_studio_url:", s.label_studio_url)
+print("label_studio_public_url:", s.label_studio_public_url)
+print("label_studio_token:", "set" if s.label_studio_api_token else "missing")
+print("unitrain_url:", s.unitrain_url)
+print("unitrain_token:", "set" if s.unitrain_api_token else "missing")
+'
+
+docker compose exec -T worker rq info -u redis://redis:6379/0
+docker compose logs --tail=100 api worker label-studio unitrain-api
+```
+
+预期内部地址分别为 `http://label-studio:8080` 和 `http://unitrain-api:8090`，RQ 输出应显示一个监听 `dataset-operations` 的 worker。通过 SSH 隧道访问平台 `http://127.0.0.1:8080` 和 Label Studio `http://127.0.0.1:8081`。
+
+### 6. 日常启停和更新
+
+正常启动全部服务：
+
+```bash
+docker compose --profile integrations --profile unitrain up -d
+```
+
+只停止容器但保留容器定义：
+
+```bash
+docker compose --profile integrations --profile unitrain stop
+```
+
+停止并删除项目容器及 Compose 网络，但保留数据库卷和 `var/` 数据：
+
+```bash
+docker compose --profile integrations --profile unitrain down
+```
+
+代码更新后重建：
+
+```bash
+docker compose --profile integrations --profile unitrain up -d --build
+```
+
+查看日志和执行外部状态对账：
+
+```bash
+docker compose logs -f api worker label-studio unitrain-api
+docker compose exec api label-platform reconcile
+```
+
+不要执行 `docker compose down -v`，也不要删除整个 `var/`。前者会删除 PostgreSQL/Redis 卷，后者会删除受管数据集、Label Studio 数据、导出文件和 UnitTrain 运行记录。
+
+### 7. 镜像代理
+
+无法直接访问 Docker Hub/GHCR 时，需要修改三类基础镜像：
+
+- `compose.yaml`：PostgreSQL、Redis、Label Studio。
+- `deploy/web.Dockerfile`：`node:22-alpine` 与 `nginx:1.27-alpine`。
+- `deploy/api.Dockerfile`：`ghcr.io/astral-sh/uv:python3.13-bookworm-slim`。
+
+以前端为例，使用可访问的镜像代理替换两个 `FROM`：
+
+```dockerfile
+FROM <docker-hub-mirror>/node:22-alpine AS build
+# build stage commands
+FROM <docker-hub-mirror>/nginx:1.27-alpine
+```
+
+修改后单独重建 Web：
+
+```bash
+docker compose build --no-cache web
+docker compose up -d web
+```
+
+薄 `unitrain-api` 在线只代表 HTTP 接口与鉴权正常。实际训练还需要在 GPU 训练主机准备 `.venv-yolo` 或 `.venv-rfdetr`、CUDA/驱动和共享的 `UNITRAIN_EXPORT_PATH`；当前 Compose API 镜像不自动安装训练框架环境。
 
 ## Backup and restore
 
@@ -173,7 +607,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 2. 准备数据
 
-将数据集放入 `data/` 目录，使用 COCO 格式：
+以下结构仅用于**绕过平台、直接调用 UniTrain**。它不是 Label Platform 的导入结构；平台导入必须遵循前面的“平台数据集导入规范”，一个目录中只能保留一个 COCO 标注 JSON。
+
+直接使用 UniTrain 时，将数据集放入 `data/` 目录，使用 COCO 格式：
 
 ```
 data/
