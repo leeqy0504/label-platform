@@ -1,6 +1,6 @@
 # Label Platform - Session Memory
 
-> 生成日期：2026-07-20 | 分支：`feature/platform-implementation`
+> 生成日期：2026-07-21 | 分支：`feature/platform-implementation`
 
 ## 本次已修复的问题
 
@@ -26,13 +26,13 @@
 
 ---
 
-### 3. 在审核产物版本（v2）上创建新审核失败
+### 3. ~~在审核产物版本（v2）上创建新审核失败~~ → 见 #5（回归修复）
 
-**根因**：`label_platform/reviews/export.py` 的 `_relative_below_images()` 在生成 v2 时剥掉了 `images/` 前缀，导致 publisher 将图片存到 `versions/v2/train/001.jpg` 而非 `versions/v2/images/train/001.jpg`。之后在 v2 上创建审核时，Label Studio local storage 挂载在 `.../v2/images` 下找不到图片。
+> **⚠️ 此修复被回退**：移除 `_relative_below_images()` 导致 `_canonical_image_path`（`normalize.py`）重复添加 `images/` 前缀，产生 `images/images/train/001.jpg` 的错误路径。详见 #5。
 
-**修复**：
-- `label_platform/reviews/export.py`：移除 `_relative_below_images()` 函数，直接使用 `item.relative_path` 保留原始 `images/` 前缀
-- 删除不再使用的 `PurePosixPath` 和 `DatasetItem` 导入
+**原始修复**（已被回退）：
+- `label_platform/reviews/export.py`：移除 `_relative_below_images()` 函数
+- 删除 `PurePosixPath` 和 `DatasetItem` 导入
 
 ---
 
@@ -43,13 +43,32 @@
 
 ---
 
+### 5. 修复 #3 的回归：v2 审核产物路径双前缀问题
+
+**根因**：#3 移除了 `_relative_below_images()` 函数。该函数剥离 `images/` 前缀是**必需的**——因为 `normalize_source()` 中的 `_canonical_image_path()` 始终会在路径前面加上 `images/`。
+
+调用链：
+1. `load_review_export()` → 将 `item.relative_path`（如 `"images/train/001.jpg"`）传递给 `SourceImage.relative_path`
+2. `normalize_source()` → `_canonical_image_path("images/train/001.jpg")` → 返回 `"images/images/train/001.jpg"` ❌
+3. `DatasetPublisher.publish()` → 将图片写入 `staging/images/images/train/001.jpg`
+4. `_mark_ready()` → 存储 `relative_path="images/images/train/001.jpg"`（错误）
+5. 在此 v2 上创建新审核 → `_local_file_url()` 生成双重前缀的 URL，Label Studio 无法找到图片
+
+**修复**：
+- `label_platform/reviews/export.py`：**恢复** `_relative_below_images()` 函数和 `PurePosixPath`、`DatasetItem` 导入
+- 第 71 行改回 `relative = _relative_below_images(item)`
+
+`_relative_below_images()` 确保 `SourceImage.relative_path` 不含 `images/`，从而 `_canonical_image_path` 能正确添加**一个** `images/` 前缀。
+
+---
+
 ## 当前文件修改清单
 
 | 文件 | 状态 | 说明 |
 |------|------|------|
 | `compose.yaml` | 已修改 | 新增 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 环境变量 |
 | `label_platform/api/routes/reviews.py` | 已修改 | `_review_response()` 动态读取 settings URL；`list_reviews`/`get_review` 新增 `request` 参数 |
-| `label_platform/reviews/export.py` | 已修改 | 移除 `_relative_below_images()`，保留 `images/` 前缀 |
+| `label_platform/reviews/export.py` | 已修改 | 恢复 `_relative_below_images()`，修复 #3 引入的双前缀回归 |
 | `web/src/app/components/datasets/ReviewTab.tsx` | 已修改 | COMPLETED 状态隐藏 Label Studio 按钮 |
 | `web/src/app/pages/ReviewPage.tsx` | 已修改 | 同上 |
 | `label_platform/integrations/unitrain.py` | 未提交 | `X-API-Key` 改为 `Authorization: Bearer`（可能需确认方向） |

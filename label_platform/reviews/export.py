@@ -3,11 +3,11 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from label_platform.datasets.contracts import SourceDataset, SourceFormatError
 from label_platform.datasets.labelstudio_adapter import LabelStudioExportAdapter
-from label_platform.db.models import DatasetVersion
+from label_platform.db.models import DatasetItem, DatasetVersion
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
 
@@ -68,7 +68,7 @@ def load_review_export(
     for sample_key, source_image in zip(sample_keys, source.images, strict=True):
         item = items[sample_key]
         old_to_new[source_image.sample_key] = sample_key
-        relative = item.relative_path
+        relative = _relative_below_images(item)
         normalized_images.append(
             replace(
                 source_image,
@@ -89,3 +89,14 @@ def load_review_export(
         images=tuple(normalized_images),
         annotations=normalized_annotations,
     )
+
+
+def _relative_below_images(item: DatasetItem) -> str:
+    path = PurePosixPath(item.relative_path)
+    if path.is_absolute() or ".." in path.parts:
+        raise SourceFormatError("Dataset item path is invalid")
+    if path.parts and path.parts[0] == "images":
+        path = PurePosixPath(*path.parts[1:])
+    if str(path) in {"", "."}:
+        raise SourceFormatError("Dataset item path is invalid")
+    return path.as_posix()
