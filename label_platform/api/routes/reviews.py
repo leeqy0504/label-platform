@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
@@ -179,6 +179,23 @@ def get_review(
     _: CurrentUser,
 ) -> ReviewResponse:
     return _review_response(_require_review(session, review_id), request=request, job_id=_latest_job_id(session, review_id))
+
+
+@router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_review(
+    review_id: str,
+    request: Request,
+    session: SessionDependency,
+    operator: ReviewOperator,
+) -> Response:
+    _require_review(session, review_id)
+    try:
+        _workflow(request).delete_session(review_id, deleted_by_id=operator.id)
+    except ReviewConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ReviewWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{review_id}/sync", response_model=ReviewResponse)

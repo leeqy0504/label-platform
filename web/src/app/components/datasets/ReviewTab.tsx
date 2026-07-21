@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ExternalLink, Plus, RefreshCw, Wifi, WifiOff, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ExternalLink, Plus, RefreshCw, Wifi, WifiOff, Loader2, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import {
   listReviewSessions,
   createReviewSession,
+  deleteReviewSession,
   finalizeReviewSession,
   checkLabelStudioConnection,
   syncReviewSession,
@@ -100,7 +101,7 @@ function CreateSessionDialog({ open, onOpenChange, dataset, onCreated }: CreateS
   );
 }
 
-export function ReviewTab({ dataset }: { dataset: Dataset }) {
+export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?: () => Promise<void> }) {
   const { user } = useAuth();
   const canOperate = user?.role === 'admin' || user?.role === 'data_engineer';
   const mounted = useRef(true);
@@ -109,7 +110,9 @@ export function ReviewTab({ dataset }: { dataset: Dataset }) {
   const [lsStatus, setLsStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [createOpen, setCreateOpen] = useState(false);
   const [finalizeTarget, setFinalizeTarget] = useState<ReviewSession | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ReviewSession | null>(null);
   const [finalizing, setFinalizing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -210,6 +213,22 @@ export function ReviewTab({ dataset }: { dataset: Dataset }) {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setDeletingId(target.id);
+    setActionError(null);
+    try {
+      await deleteReviewSession(target.id);
+      await Promise.all([loadSessions(false), onDeleted?.()]);
+    } catch {
+      setActionError('审核任务删除失败，请确认任务状态和 Label Studio 连接');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatDate = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -295,7 +314,19 @@ export function ReviewTab({ dataset }: { dataset: Dataset }) {
                     {session.completedAt && <span>完成: {formatDate(session.completedAt)}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {canOperate && ['ready', 'in_review'].includes(session.status) && (
+                    <button
+                      onClick={() => setDeleteTarget(session)}
+                      disabled={deletingId === session.id}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-red-200 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-40"
+                    >
+                      {deletingId === session.id
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <Trash2 className="size-3.5" />}
+                      删除审核任务
+                    </button>
+                  )}
                   {session.labelStudioProjectUrl && session.status !== 'completed' && <a
                     href={session.labelStudioProjectUrl}
                     target="_blank"
@@ -387,6 +418,24 @@ export function ReviewTab({ dataset }: { dataset: Dataset }) {
         dataset={dataset}
         onCreated={loadSessions}
       />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={o => !o && setDeleteTarget(null)}
+        title="删除审核任务"
+        description="删除后无法恢复。"
+        confirmLabel="确认删除"
+        variant="destructive"
+        onConfirm={handleDelete}
+      >
+        <ul className="text-xs text-gray-600 space-y-1">
+          {deleteTarget?.labelStudioProjectId != null && (
+            <li>删除 Label Studio 项目 {deleteTarget?.labelStudioProjectId}</li>
+          )}
+          <li>删除平台中的审核任务记录</li>
+          <li>不会删除原始数据集及其版本</li>
+        </ul>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={!!finalizeTarget}

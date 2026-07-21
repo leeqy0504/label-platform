@@ -517,6 +517,10 @@ export async function createReviewSession(payload: { datasetId: string; inputVer
   return mapReview(review);
 }
 
+export function deleteReviewSession(id: string): Promise<void> {
+  return request(`/api/reviews/${id}`, { method: 'DELETE' });
+}
+
 export async function syncReviewSession(id: string): Promise<ReviewSession> {
   return mapReview(await request<ApiReview>(`/api/reviews/${id}/sync`, { method: 'POST' }));
 }

@@ -34,9 +34,9 @@ export default function DatasetDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = async (showLoading = true) => {
     if (!id) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     try {
       const ds = await getDataset(id);
@@ -44,7 +44,7 @@ export default function DatasetDetailPage() {
     } catch {
       setError('数据集不存在或加载失败');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -89,7 +89,7 @@ export default function DatasetDetailPage() {
               </span>
             )}
           </div>
-          <button onClick={load} title="刷新" className="size-7 flex items-center justify-center text-gray-400 hover:bg-gray-100 rounded transition-colors">
+          <button onClick={() => { void load(); }} title="刷新" className="size-7 flex items-center justify-center text-gray-400 hover:bg-gray-100 rounded transition-colors">
             <RefreshCw className="size-3.5" />
           </button>
         </div>
@@ -125,7 +125,7 @@ export default function DatasetDetailPage() {
         {activeTab === 'format' && <FormatSplitsTab dataset={dataset} />}
         {activeTab === 'categories' && <CategoriesTab dataset={dataset} />}
         {activeTab === 'versions' && <VersionsTab dataset={dataset} />}
-        {activeTab === 'review' && <ReviewTab dataset={dataset} />}
+        {activeTab === 'review' && <ReviewTab dataset={dataset} onDeleted={() => load(false)} />}
         {activeTab === 'training' && <DatasetTrainingTab dataset={dataset} />}
       </div>
     </div>

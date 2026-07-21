@@ -7,12 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from label_platform.datasets.service import DatasetRegistrationRequest, RegistrationService
 from label_platform.db.models import (
     AuditEvent,
+    BackgroundJob,
     Dataset,
     DatasetVersion,
     ReviewSession,
@@ -231,6 +232,74 @@ class ReviewWorkflow:
             session.flush()
             session.expunge(review)
             return review
+
+    def delete_session(self, review_id: str, *, deleted_by_id: str) -> None:
+        with self.session_factory() as session, session.begin():
+            review = session.scalar(
+                select(ReviewSession).where(ReviewSession.id == review_id).with_for_update()
+            )
+            if review is None:
+                raise ReviewWorkflowError("Review session was not found")
+            if review.status not in {
+                ReviewStatus.READY,
+                ReviewStatus.IN_REVIEW,
+            }:
+                raise ReviewConflictError("Review cannot be deleted in its current state")
+
+            project_id = review.label_studio_project_id
+            review_status = review.status
+            if project_id is not None:
+                try:
+                    self.connector.delete_project(project_id)
+                except Exception as exc:
+                    raise ReviewWorkflowError(
+                        "Label Studio project could not be deleted"
+                    ) from exc
+
+            remaining_reviews = session.scalars(
+                select(ReviewSession).where(
+                    ReviewSession.dataset_id == review.dataset_id,
+                    ReviewSession.id != review.id,
+                )
+            ).all()
+            active_statuses = {
+                ReviewStatus.READY,
+                ReviewStatus.IN_REVIEW,
+                ReviewStatus.EXPORTING,
+            }
+            has_other_active_review = any(
+                candidate.status in active_statuses
+                or (
+                    candidate.status is ReviewStatus.FAILED
+                    and candidate.recoverable_status in active_statuses
+                )
+                for candidate in remaining_reviews
+            )
+            if not has_other_active_review:
+                review.dataset.status = (
+                    "pending_annotation"
+                    if review.input_version.annotation_count == 0
+                    else "trainable"
+                )
+
+            session.execute(
+                delete(BackgroundJob).where(BackgroundJob.business_object_id == review.id)
+            )
+            session.delete(review)
+            session.add(
+                AuditEvent(
+                    actor_user_id=deleted_by_id,
+                    action="review.deleted",
+                    resource_type="review",
+                    resource_id=review_id,
+                    details={
+                        "dataset_id": review.dataset_id,
+                        "input_version_id": review.input_version_id,
+                        "label_studio_project_id": project_id,
+                        "status": review_status.value,
+                    },
+                )
+            )
 
     def run_export(
         self,

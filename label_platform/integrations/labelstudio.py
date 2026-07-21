@@ -47,6 +47,8 @@ class LabelStudioConnector(Protocol):
 
     def archive_project(self, project_id: int) -> None: ...
 
+    def delete_project(self, project_id: int) -> None: ...
+
 
 class LabelStudioHttpConnector:
     def __init__(
@@ -222,13 +224,19 @@ class LabelStudioHttpConnector:
     def archive_project(self, project_id: int) -> None:
         self._request("PATCH", f"/api/projects/{project_id}", json={"is_published": False})
 
+    def delete_project(self, project_id: int) -> None:
+        self._request("DELETE", f"/api/projects/{project_id}", allow_not_found=True)
+
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         if not self.token:
             raise LabelStudioError("Label Studio token is not configured")
+        allow_not_found = bool(kwargs.pop("allow_not_found", False))
         headers = dict(cast(dict[str, str], kwargs.pop("headers", {})))
         headers["Authorization"] = self._authorization_header()
         try:
             response = self.client.request(method, path, headers=headers, **kwargs)
+            if allow_not_found and response.status_code == 404:
+                return response
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise LabelStudioError(f"Label Studio request failed: {method} {path}") from exc

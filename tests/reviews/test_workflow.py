@@ -18,6 +18,7 @@ class FakeLabelStudioConnector:
     def __init__(self) -> None:
         self.tasks: dict[str, tuple[int, dict[str, object]]] = {}
         self.import_calls = 0
+        self.deleted_projects: list[int] = []
 
     def health(self) -> str:
         return "1.13.1"
@@ -95,6 +96,9 @@ class FakeLabelStudioConnector:
 
     def archive_project(self, project_id: int) -> None:
         pass
+
+    def delete_project(self, project_id: int) -> None:
+        self.deleted_projects.append(project_id)
 
 
 class FakeUnitTrainConnector:

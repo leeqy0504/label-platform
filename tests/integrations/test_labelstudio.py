@@ -37,6 +37,8 @@ def test_connector_uses_rest_api_for_project_storage_import_progress_and_export(
                     "skipped_annotations_number": 0,
                 },
             )
+        if request.url.path == "/api/projects/17" and request.method == "DELETE":
+            return httpx.Response(204)
         if request.url.path == "/api/projects/17/export":
             return httpx.Response(200, json=[{"id": 41, "data": {"sample_key": "sample-1"}}])
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
@@ -61,6 +63,7 @@ def test_connector_uses_rest_api_for_project_storage_import_progress_and_export(
     existing = connector.get_task_bindings(project_id)
     progress = connector.get_progress(project_id)
     export_path = connector.export_annotations(project_id, tmp_path / "raw-export.json")
+    connector.delete_project(project_id)
 
     assert project_id == 17
     assert storage_id == 23
@@ -70,6 +73,10 @@ def test_connector_uses_rest_api_for_project_storage_import_progress_and_export(
     assert progress.completed == 1
     assert export_path.read_text(encoding="utf-8").startswith("[")
     assert connector.get_review_url(project_id) == "http://label.test/projects/17/data"
+    assert any(
+        request.method == "DELETE" and request.url.path == "/api/projects/17"
+        for request in requests
+    )
     assert all("sqlite" not in str(request.url) for request in requests)
 
 
@@ -88,3 +95,18 @@ def test_connector_reuses_matching_local_storage():
     )
 
     assert connector.create_local_storage(17, "/datasets/warehouse/v1/images") == 9
+
+
+def test_connector_treats_missing_project_as_already_deleted():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url.path == "/api/projects/17"
+        return httpx.Response(404)
+
+    connector = LabelStudioHttpConnector(
+        base_url="http://label.test",
+        token="test-token",
+        client=httpx.Client(base_url="http://label.test", transport=httpx.MockTransport(handler)),
+    )
+
+    connector.delete_project(17)
