@@ -14,6 +14,7 @@ import {
   listAllowedRoots,
   registerDataset,
 } from '../../../services/api';
+import { generateIdempotencyKey } from '../../../services/idempotency';
 import type {
   AllowedRoot,
   AnalysisResult,
@@ -45,10 +46,6 @@ const formatLabels: Record<string, string> = {
   coco_instance: 'COCO Instance Segmentation',
   label_studio: 'Label Studio Export',
 };
-
-function uniqueId() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-}
 
 export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) {
   const [roots, setRoots] = useState<AllowedRoot[]>([]);
@@ -166,7 +163,7 @@ export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) 
     setAnalysis(null);
     setError('');
     try {
-      const accepted = await analyzeDataset({ ...selection(), idempotency_key: uniqueId() });
+      const accepted = await analyzeDataset({ ...selection(), idempotency_key: generateIdempotencyKey() });
       const completed = await waitForJob<AnalysisResult>(accepted.job_id);
       if (completed.status === 'failed') {
         setError(completed.error_summary.message ?? '分析任务失败');
@@ -188,7 +185,7 @@ export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) 
     }
     setPhase('registering');
     setError('');
-    const taskId = `registration-${uniqueId()}`;
+    const taskId = `registration-${generateIdempotencyKey()}`;
     addTask({ id: taskId, label: `登记 ${name.trim()}`, status: 'running', progress: 0 });
     try {
       const accepted = await registerDataset({
@@ -196,7 +193,7 @@ export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) 
         name: name.trim(),
         description: description.trim(),
         analysis_fingerprint: analysis.fingerprint,
-        idempotency_key: uniqueId(),
+        idempotency_key: generateIdempotencyKey(),
       });
       const completed = await waitForJob(accepted.job_id);
       if (completed.status !== 'succeeded') {

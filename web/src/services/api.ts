@@ -1,4 +1,5 @@
 import { request } from './http';
+import { generateIdempotencyKey } from './idempotency';
 import type {
   AllowedRoot,
   AnalysisResult,
@@ -510,7 +511,7 @@ export async function createReviewSession(payload: { datasetId: string; inputVer
     body: JSON.stringify({
       dataset_id: payload.datasetId,
       input_version_id: payload.inputVersionId,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: generateIdempotencyKey(),
     }),
   });
   return mapReview(review);
@@ -571,7 +572,7 @@ export function createTrainingRun(payload: {
       name: payload.name,
       dataset_id: payload.datasetId,
       dataset_version_id: payload.datasetVersionId,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: generateIdempotencyKey(),
       config: payload.config,
     }),
   }).then(run => mapTrainingRun(run));
