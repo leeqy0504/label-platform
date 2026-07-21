@@ -121,11 +121,12 @@ def create_review(
             ) from exc
     session.expire_all()
     stored = _require_review(session, review.id)
-    return _review_response(stored, job_id=job.id)
+    return _review_response(stored, request=request, job_id=job.id)
 
 
 @router.get("")
 def list_reviews(
+    request: Request,
     session: SessionDependency,
     _: CurrentUser,
     dataset_id: str | None = None,
@@ -161,6 +162,7 @@ def list_reviews(
         "data": [
             _review_response(
                 review,
+                request=request,
                 job_id=_latest_job_id(session, review.id),
             ).model_dump()
             for review in reviews
@@ -172,10 +174,11 @@ def list_reviews(
 @router.get("/{review_id}", response_model=ReviewResponse)
 def get_review(
     review_id: str,
+    request: Request,
     session: SessionDependency,
     _: CurrentUser,
 ) -> ReviewResponse:
-    return _review_response(_require_review(session, review_id), job_id=_latest_job_id(session, review_id))
+    return _review_response(_require_review(session, review_id), request=request, job_id=_latest_job_id(session, review_id))
 
 
 @router.post("/{review_id}/sync", response_model=ReviewResponse)
@@ -190,7 +193,7 @@ def sync_review(
     except ReviewWorkflowError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     session.expire_all()
-    return _review_response(_require_review(session, review_id), job_id=_latest_job_id(session, review_id))
+    return _review_response(_require_review(session, review_id), request=request, job_id=_latest_job_id(session, review_id))
 
 
 @router.post("/{review_id}/complete", response_model=ReviewResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -245,7 +248,7 @@ def complete_review(
                 detail="Review export could not be queued",
             ) from exc
     session.expire_all()
-    return _review_response(_require_review(session, review_id), job_id=job.id)
+    return _review_response(_require_review(session, review_id), request=request, job_id=job.id)
 
 
 @router.post("/{review_id}/retry", response_model=ReviewResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -290,7 +293,7 @@ def retry_review(
         _workflow(request).fail_session(review_id, exc, recoverable=review.status)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Retry failed") from exc
     session.expire_all()
-    return _review_response(_require_review(session, review_id), job_id=job.id)
+    return _review_response(_require_review(session, review_id), request=request, job_id=job.id)
 
 
 @integration_router.get("/health")
@@ -309,9 +312,15 @@ def _require_review(session: SessionDependency, review_id: str) -> ReviewSession
     return review
 
 
-def _review_response(review: ReviewSession, *, job_id: str | None = None) -> ReviewResponse:
+def _review_response(
+    review: ReviewSession,
+    *,
+    request: Request,
+    job_id: str | None = None,
+) -> ReviewResponse:
+    label_studio_public_url = request.app.state.settings.label_studio_public_url.rstrip("/")
     project_url = (
-        f"{review.label_studio_base_url}/projects/{review.label_studio_project_id}/data"
+        f"{label_studio_public_url}/projects/{review.label_studio_project_id}/data"
         if review.label_studio_project_id is not None
         else None
     )

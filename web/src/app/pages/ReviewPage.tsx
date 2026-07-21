@@ -125,7 +125,7 @@ export default function ReviewPage() {
                   <td className="px-3 py-2.5 text-xs text-gray-500">{formatDate(session.startedAt)}</td>
                   <td className="px-3 py-2.5 text-xs font-mono text-gray-600">{session.outputVersion ?? '—'}</td>
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
-                    {session.labelStudioProjectUrl && <a
+                    {session.labelStudioProjectUrl && session.status !== 'completed' && <a
                       href={session.labelStudioProjectUrl}
                       target="_blank"
                       rel="noreferrer"

@@ -296,7 +296,7 @@ export function ReviewTab({ dataset }: { dataset: Dataset }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {session.labelStudioProjectUrl && <a
+                  {session.labelStudioProjectUrl && session.status !== 'completed' && <a
                     href={session.labelStudioProjectUrl}
                     target="_blank"
                     rel="noreferrer"

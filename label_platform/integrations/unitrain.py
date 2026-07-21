@@ -99,7 +99,7 @@ class RestUnitTrainConnector:
     ) -> None:
         headers = {"Accept": "application/json"}
         if api_token:
-            headers["Authorization"] = f"Bearer {api_token}"
+            headers["X-API-Key"] = api_token
         self.client = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers=headers,
