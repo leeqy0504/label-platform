@@ -8,6 +8,7 @@ const breadcrumbMap: Record<string, string> = {
   training: '训练任务',
   models: '模型',
   admin: '系统管理',
+  guide: '使用手册',
   detail: '详情',
   new: '新建',
 };

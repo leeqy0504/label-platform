@@ -5,6 +5,7 @@ import {
   Play,
   Box,
   Settings,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/training', icon: Play, label: '训练任务' },
   { to: '/models', icon: Box, label: '模型' },
   { to: '/admin', icon: Settings, label: '系统管理' },
+  { to: '/guide', icon: BookOpen, label: '使用手册' },
 ];
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {

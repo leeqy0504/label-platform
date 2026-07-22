@@ -1,0 +1,1605 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>视觉数据集管理平台使用手册</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --surface-soft: #f9fafb;
+      --border: #e5e7eb;
+      --border-strong: #d1d5db;
+      --text: #111827;
+      --text-soft: #374151;
+      --muted: #6b7280;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green: #15803d;
+      --green-soft: #f0fdf4;
+      --amber: #b45309;
+      --amber-soft: #fffbeb;
+      --red: #b91c1c;
+      --sidebar-width: 252px;
+      --topbar-height: 56px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-synthesis: none;
+      letter-spacing: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 84px;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-size: 15px;
+      line-height: 1.75;
+    }
+
+    body.no-scroll {
+      overflow: hidden;
+    }
+
+    button,
+    input {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 10px;
+      left: 10px;
+      transform: translateY(-160%);
+      padding: 7px 11px;
+      border-radius: 4px;
+      color: #fff;
+      background: var(--blue);
+      text-decoration: none;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .progress {
+      position: fixed;
+      z-index: 80;
+      top: 0;
+      left: var(--sidebar-width);
+      right: 0;
+      height: 2px;
+      background: transparent;
+    }
+
+    .progress-bar {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--blue);
+    }
+
+    .sidebar {
+      position: fixed;
+      z-index: 50;
+      inset: 0 auto 0 0;
+      width: var(--sidebar-width);
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand {
+      height: var(--topbar-height);
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: none;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 25px;
+      height: 25px;
+      border-radius: 5px;
+      background: var(--blue);
+      flex: none;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      right: 6px;
+      height: 5px;
+      border: 1.5px solid #fff;
+      border-radius: 50%;
+    }
+
+    .brand-mark::before {
+      top: 5px;
+      box-shadow: 0 5px 0 -1px var(--blue), 0 5px 0 0 #fff;
+    }
+
+    .brand-mark::after {
+      bottom: 4px;
+      border-top: 0;
+      border-radius: 0 0 50% 50%;
+    }
+
+    .brand-name {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .toc {
+      flex: 1;
+      min-height: 0;
+      padding: 14px 10px 24px;
+      overflow-y: auto;
+    }
+
+    .toc-title {
+      margin: 0 9px 7px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .toc-group + .toc-group {
+      margin-top: 16px;
+    }
+
+    .toc-link {
+      display: flex;
+      align-items: center;
+      min-height: 34px;
+      margin: 2px 0;
+      padding: 6px 10px;
+      border-radius: 4px;
+      color: var(--text-soft);
+      font-size: 13px;
+      line-height: 1.45;
+      text-decoration: none;
+      transition: color 140ms ease, background 140ms ease;
+    }
+
+    .toc-link:hover {
+      background: #f3f4f6;
+      color: var(--text);
+    }
+
+    .toc-link.active {
+      color: #1d4ed8;
+      background: var(--blue-soft);
+      font-weight: 600;
+    }
+
+    .sidebar-meta {
+      flex: none;
+      padding: 12px 18px 15px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .main-shell {
+      min-height: 100vh;
+      margin-left: var(--sidebar-width);
+    }
+
+    .topbar {
+      position: fixed;
+      z-index: 40;
+      top: 0;
+      left: var(--sidebar-width);
+      right: 0;
+      height: var(--topbar-height);
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.96);
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .mobile-toc-button {
+      display: none;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: var(--text-soft);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .breadcrumb {
+      min-width: 180px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .breadcrumb strong {
+      color: var(--text-soft);
+      font-weight: 600;
+    }
+
+    .search {
+      position: relative;
+      width: min(440px, 42vw);
+      margin-left: auto;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 34px;
+      padding: 0 12px 0 34px;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      outline: 0;
+      color: var(--text);
+      background: var(--surface-soft);
+    }
+
+    .search::before {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      top: 10px;
+      left: 12px;
+      width: 10px;
+      height: 10px;
+      border: 1.5px solid #9ca3af;
+      border-radius: 50%;
+    }
+
+    .search::after {
+      content: "";
+      position: absolute;
+      z-index: 1;
+      top: 21px;
+      left: 22px;
+      width: 5px;
+      height: 1.5px;
+      background: #9ca3af;
+      transform: rotate(45deg);
+      transform-origin: left center;
+    }
+
+    .search-input:focus {
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      background: #fff;
+    }
+
+    .search-results {
+      position: absolute;
+      top: 40px;
+      right: 0;
+      left: 0;
+      display: none;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 12px 30px rgba(17, 24, 39, 0.12);
+    }
+
+    .search-results.open {
+      display: block;
+    }
+
+    .search-result {
+      width: 100%;
+      padding: 9px 12px;
+      border: 0;
+      border-bottom: 1px solid #f3f4f6;
+      color: var(--text-soft);
+      background: #fff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .search-result:last-child {
+      border-bottom: 0;
+    }
+
+    .search-result:hover,
+    .search-result:focus-visible {
+      color: #1d4ed8;
+      background: var(--blue-soft);
+      outline: 0;
+    }
+
+    .search-empty {
+      padding: 11px 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .print-button {
+      height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: var(--text-soft);
+      background: #fff;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .print-button:hover,
+    .mobile-toc-button:hover {
+      background: #f9fafb;
+      color: var(--text);
+    }
+
+    .article {
+      width: min(100%, 1060px);
+      margin: 0 auto;
+      padding: 94px 44px 100px;
+    }
+
+    .intro {
+      padding-bottom: 38px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      color: var(--text);
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin-bottom: 11px;
+      font-size: 30px;
+    }
+
+    h2 {
+      margin-bottom: 18px;
+      font-size: 22px;
+    }
+
+    h3 {
+      margin-bottom: 9px;
+      font-size: 16px;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 16px;
+    }
+
+    .intro-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-top: 30px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .workflow-step {
+      position: relative;
+      min-height: 110px;
+      padding: 18px 18px 16px 0;
+    }
+
+    .workflow-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 22px;
+      right: 12px;
+      width: 28px;
+      height: 1px;
+      background: #cbd5e1;
+    }
+
+    .workflow-number {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      margin-bottom: 9px;
+      border-radius: 50%;
+      color: #1d4ed8;
+      background: var(--blue-soft);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .workflow-step strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 13px;
+    }
+
+    .workflow-step span:last-child {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .doc-section {
+      padding: 50px 0 8px;
+      scroll-margin-top: 70px;
+    }
+
+    .doc-section + .doc-section {
+      border-top: 1px solid var(--border);
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .section-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid #bfdbfe;
+      border-radius: 5px;
+      color: #1d4ed8;
+      background: var(--blue-soft);
+      font-size: 12px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--text-soft);
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 20px;
+      padding-left: 22px;
+      color: var(--text-soft);
+    }
+
+    li + li {
+      margin-top: 7px;
+    }
+
+    code {
+      padding: 1px 5px;
+      border: 1px solid #e5e7eb;
+      border-radius: 3px;
+      color: #1f2937;
+      background: #f3f4f6;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.9em;
+      word-break: break-word;
+    }
+
+    pre {
+      margin: 13px 0 22px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: #dbeafe;
+      background: #111827;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    pre code {
+      padding: 0;
+      border: 0;
+      color: inherit;
+      background: transparent;
+      font-size: inherit;
+    }
+
+    .notice {
+      margin: 20px 0 24px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .notice.warning {
+      border-left-color: #d97706;
+      background: var(--amber-soft);
+    }
+
+    .notice.success {
+      border-left-color: #16a34a;
+      background: var(--green-soft);
+    }
+
+    .notice strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .notice p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 13px;
+    }
+
+    .format-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin: 18px 0 22px;
+    }
+
+    .format-panel {
+      min-width: 0;
+    }
+
+    .format-panel h3 {
+      margin-bottom: 4px;
+    }
+
+    .format-panel p {
+      min-height: 52px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .format-panel pre {
+      height: calc(100% - 80px);
+      min-height: 150px;
+      margin: 0;
+    }
+
+    .steps {
+      counter-reset: steps;
+      margin: 18px 0 26px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      position: relative;
+      min-height: 34px;
+      padding: 1px 0 20px 42px;
+      counter-increment: steps;
+    }
+
+    .steps li + li {
+      margin-top: 0;
+    }
+
+    .steps li::before {
+      content: counter(steps);
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 25px;
+      height: 25px;
+      border: 1px solid #bfdbfe;
+      border-radius: 50%;
+      color: #1d4ed8;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .steps li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 27px;
+      bottom: 1px;
+      left: 12px;
+      width: 1px;
+      background: #dbeafe;
+    }
+
+    .steps strong {
+      color: var(--text);
+    }
+
+    .screenshot {
+      margin: 24px 0 32px;
+    }
+
+    .image-button {
+      width: 100%;
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: #fff;
+      cursor: zoom-in;
+    }
+
+    .image-button:hover,
+    .image-button:focus-visible {
+      border-color: #93c5fd;
+      outline: 3px solid rgba(37, 99, 235, 0.1);
+    }
+
+    .screenshot.portrait .image-button {
+      width: min(100%, 510px);
+      margin: 0 auto;
+    }
+
+    figcaption {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .table-wrap {
+      margin: 16px 0 26px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-soft);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      background: var(--surface-soft);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 1px 7px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+
+    .status.green {
+      color: var(--green);
+      border-color: #bbf7d0;
+      background: var(--green-soft);
+    }
+
+    .status.amber {
+      color: var(--amber);
+      border-color: #fde68a;
+      background: var(--amber-soft);
+    }
+
+    .status.gray {
+      color: #4b5563;
+      border-color: #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .faq {
+      margin: 12px 0 28px;
+      border-top: 1px solid var(--border);
+    }
+
+    details {
+      border-bottom: 1px solid var(--border);
+    }
+
+    summary {
+      position: relative;
+      padding: 15px 34px 15px 0;
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    summary::after {
+      content: "+";
+      position: absolute;
+      top: 12px;
+      right: 2px;
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 400;
+    }
+
+    details[open] summary::after {
+      content: "−";
+    }
+
+    details p {
+      padding: 0 34px 15px 0;
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 50px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .sidebar-scrim {
+      position: fixed;
+      z-index: 45;
+      inset: 0;
+      display: none;
+      background: rgba(17, 24, 39, 0.36);
+    }
+
+    .lightbox {
+      position: fixed;
+      z-index: 100;
+      inset: 0;
+      display: none;
+      padding: 28px;
+      background: rgba(17, 24, 39, 0.88);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .lightbox.open {
+      display: flex;
+    }
+
+    .lightbox-content {
+      position: relative;
+      width: min(100%, 1500px);
+      max-height: calc(100vh - 56px);
+    }
+
+    .lightbox img {
+      width: 100%;
+      max-height: calc(100vh - 96px);
+      object-fit: contain;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: -16px;
+      right: -16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      border-radius: 50%;
+      color: #fff;
+      background: #111827;
+      font-size: 23px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .lightbox-caption {
+      margin-top: 9px;
+      color: #e5e7eb;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    html.embedded .brand-name {
+      font-size: 13px;
+    }
+
+    html.embedded .sidebar-meta {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      :root {
+        --sidebar-width: 226px;
+      }
+
+      .article {
+        padding-right: 28px;
+        padding-left: 28px;
+      }
+
+      .workflow {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .workflow-step:nth-child(3)::after {
+        display: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      :root {
+        --sidebar-width: 268px;
+      }
+
+      .progress {
+        left: 0;
+      }
+
+      .sidebar {
+        transform: translateX(-100%);
+        box-shadow: 10px 0 32px rgba(17, 24, 39, 0.12);
+        transition: transform 180ms ease;
+      }
+
+      body.toc-open .sidebar {
+        transform: translateX(0);
+      }
+
+      body.toc-open .sidebar-scrim {
+        display: block;
+      }
+
+      .main-shell {
+        margin-left: 0;
+      }
+
+      .topbar {
+        left: 0;
+        padding: 0 14px;
+        gap: 10px;
+      }
+
+      .mobile-toc-button {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .breadcrumb {
+        display: none;
+      }
+
+      .search {
+        width: auto;
+        flex: 1;
+      }
+
+      .print-button {
+        display: none;
+      }
+
+      .article {
+        padding: 82px 18px 70px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      h2 {
+        font-size: 20px;
+      }
+
+      .intro {
+        padding-bottom: 30px;
+      }
+
+      .workflow {
+        grid-template-columns: 1fr;
+      }
+
+      .workflow-step {
+        min-height: 0;
+        padding: 14px 0 14px 38px;
+      }
+
+      .workflow-number {
+        position: absolute;
+        top: 14px;
+        left: 0;
+      }
+
+      .workflow-step:not(:last-child)::after {
+        top: 38px;
+        bottom: -2px;
+        left: 11px;
+        width: 1px;
+        height: auto;
+      }
+
+      .format-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .format-panel p,
+      .format-panel pre {
+        min-height: 0;
+        height: auto;
+      }
+
+      .doc-section {
+        padding-top: 38px;
+      }
+
+      .lightbox {
+        padding: 14px;
+      }
+
+      .lightbox-close {
+        top: 8px;
+        right: 8px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+        font-size: 11pt;
+      }
+
+      .sidebar,
+      .topbar,
+      .progress,
+      .sidebar-scrim,
+      .lightbox {
+        display: none !important;
+      }
+
+      .main-shell {
+        margin: 0;
+      }
+
+      .article {
+        width: 100%;
+        max-width: none;
+        padding: 0;
+      }
+
+      .doc-section {
+        break-inside: avoid;
+      }
+
+      .screenshot,
+      pre,
+      table {
+        break-inside: avoid;
+      }
+
+      .image-button {
+        border-color: #d1d5db;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳转到正文</a>
+  <div class="progress" aria-hidden="true"><span class="progress-bar" id="progress-bar"></span></div>
+
+  <aside class="sidebar" id="sidebar" aria-label="手册目录">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">视觉数据集管理平台</span>
+    </div>
+    <nav class="toc" id="toc">
+      <div class="toc-group">
+        <p class="toc-title">开始使用</p>
+        <a class="toc-link active" href="#getting-started">1. 快速开始</a>
+        <a class="toc-link" href="#prepare-dataset">2. 准备数据集</a>
+        <a class="toc-link" href="#register-dataset">3. 登记数据集</a>
+      </div>
+      <div class="toc-group">
+        <p class="toc-title">日常工作</p>
+        <a class="toc-link" href="#manage-dataset">4. 管理数据与版本</a>
+        <a class="toc-link" href="#label-studio">5. Label Studio 审核</a>
+        <a class="toc-link" href="#unitrain">6. UnitTrain 训练</a>
+        <a class="toc-link" href="#models">7. 查看模型</a>
+      </div>
+      <div class="toc-group">
+        <p class="toc-title">配置与帮助</p>
+        <a class="toc-link" href="#system">8. 系统管理</a>
+        <a class="toc-link" href="#troubleshooting">9. 常见问题</a>
+        <a class="toc-link" href="#limitations">10. 当前限制</a>
+      </div>
+    </nav>
+    <div class="sidebar-meta">
+      内网使用手册<br>
+      更新日期：2026-07-22
+    </div>
+  </aside>
+
+  <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
+
+  <div class="main-shell">
+    <header class="topbar">
+      <button class="mobile-toc-button" id="mobile-toc-button" type="button" aria-controls="sidebar" aria-expanded="false">目录</button>
+      <div class="breadcrumb">帮助中心&nbsp;&nbsp;/&nbsp;&nbsp;<strong>使用手册</strong></div>
+      <div class="search" role="search">
+        <input class="search-input" id="search-input" type="search" placeholder="搜索手册内容" autocomplete="off" aria-label="搜索手册内容" aria-controls="search-results">
+        <div class="search-results" id="search-results" role="listbox" aria-label="搜索结果"></div>
+      </div>
+      <button class="print-button" id="print-button" type="button">打印</button>
+    </header>
+
+    <main class="article" id="main-content">
+      <header class="intro">
+        <p class="eyebrow">使用手册 · 部门内部版</p>
+        <h1>视觉数据集管理平台</h1>
+        <p class="lead">从服务器数据登记、Label Studio 标注审核，到 UnitTrain 训练和模型查看的一站式操作说明。</p>
+        <div class="intro-meta">
+          <span>适用对象：数据集维护人员、标注审核人员、模型训练人员</span>
+          <span>平台地址：<code>http://10.10.16.58:8080</code></span>
+        </div>
+
+        <div class="workflow" aria-label="标准工作流程">
+          <div class="workflow-step">
+            <span class="workflow-number">1</span>
+            <strong>准备数据</strong>
+            <span>放入服务器允许目录</span>
+          </div>
+          <div class="workflow-step">
+            <span class="workflow-number">2</span>
+            <strong>分析并登记</strong>
+            <span>生成不可变 v1</span>
+          </div>
+          <div class="workflow-step">
+            <span class="workflow-number">3</span>
+            <strong>审核标注</strong>
+            <span>在 Label Studio 修正</span>
+          </div>
+          <div class="workflow-step">
+            <span class="workflow-number">4</span>
+            <strong>发布新版本</strong>
+            <span>审核结果生成 v2</span>
+          </div>
+          <div class="workflow-step">
+            <span class="workflow-number">5</span>
+            <strong>训练与查看</strong>
+            <span>提交训练并查看模型</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="doc-section" id="getting-started" data-search-title="快速开始 平台用途 访问 导航">
+        <div class="section-heading"><span class="section-number">01</span><h2>快速开始</h2></div>
+        <p>平台统一管理视觉数据集、Label Studio 审核任务、UnitTrain 训练任务以及训练输出模型。平台本身不设置登录页，在同一局域网内直接打开服务器地址即可进入数据集页面。</p>
+
+        <div class="notice success">
+          <strong>版本原则</strong>
+          <p>已发布的数据集版本不可修改。需要调整 v2 时，应从 v2 创建新的审核任务，完成后生成 v3，而不是覆盖原版本。</p>
+        </div>
+
+        <h3>左侧导航</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>入口</th><th>主要用途</th></tr></thead>
+            <tbody>
+              <tr><td><strong>数据集</strong></td><td>登记、搜索、查看、版本管理和归档数据集。</td></tr>
+              <tr><td><strong>审核任务</strong></td><td>查看所有 Label Studio 审核任务及完成进度。</td></tr>
+              <tr><td><strong>训练任务</strong></td><td>提交并查看 UnitTrain 训练任务、指标与日志。</td></tr>
+              <tr><td><strong>模型</strong></td><td>查看训练完成后产生的模型及其来源版本。</td></tr>
+              <tr><td><strong>系统管理</strong></td><td>管理来源目录，检查外部服务连接和查看审计日志。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="screenshot">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/dataset-list.png" data-lightbox-caption="数据集列表与平台主导航">
+            <img src="user-guide-assets/dataset-list.png" alt="视觉数据集管理平台的数据集列表页面，左侧显示主要功能导航" loading="lazy">
+          </button>
+          <figcaption>数据集列表是进入平台后的主要工作入口。点击截图可放大查看。</figcaption>
+        </figure>
+      </section>
+
+      <section class="doc-section" id="prepare-dataset" data-search-title="准备数据集 纯图片 COCO JSON split 数据格式">
+        <div class="section-heading"><span class="section-number">02</span><h2>准备数据集</h2></div>
+        <p>当前平台从服务器目录读取数据，不是浏览器上传工具。数据集必须提前放到服务器，并位于“系统管理”中启用的允许访问目录下面。</p>
+
+        <div class="format-grid">
+          <div class="format-panel">
+            <h3>纯图片目录</h3>
+            <p>没有现有标注时使用。登记时需要填写初始类别，多个类别使用英文逗号分隔。</p>
+            <pre><code>dataset/
+└── images/
+    ├── 00001.jpg
+    ├── 00002.jpg
+    └── 00003.png</code></pre>
+          </div>
+          <div class="format-panel">
+            <h3>COCO 数据集</h3>
+            <p>推荐用于已有检测框或实例分割标注的数据。一个目录只保留一份可识别标注文件。</p>
+            <pre><code>dataset/
+├── images/
+│   ├── 00001.jpg
+│   └── 00002.jpg
+└── annotations.json</code></pre>
+          </div>
+        </div>
+
+        <h3>COCO 文件要求</h3>
+        <p><code>annotations.json</code> 必须是完整 COCO 对象，至少包含以下三个数组：</p>
+        <pre><code>{
+  "images": [],
+  "annotations": [],
+  "categories": []
+}</code></pre>
+        <ul>
+          <li><code>images[].file_name</code> 必须是相对于数据集目录的有效路径，例如 <code>images/00001.jpg</code>。</li>
+          <li>检测框格式为 <code>[x, y, width, height]</code>，不是 <code>[x1, y1, x2, y2]</code>。</li>
+          <li>检测框和分割掩码不能超出真实图片尺寸。</li>
+          <li>同一目录只能存在一个可识别的 COCO 或 Label Studio 标注源。</li>
+          <li>不支持同时放置 <code>annotations/train.json</code> 和 <code>annotations/val.json</code>；多份 COCO JSON 应先合并。</li>
+        </ul>
+
+        <h3>保留已有切分</h3>
+        <p>如需保留训练集、验证集或测试集划分，可在 COCO 的 <code>images[]</code> 中增加 <code>split</code>；连续帧等关联图片可使用相同 <code>group_key</code>，平台会把它们放入同一切分。</p>
+        <pre><code>{
+  "id": 1,
+  "file_name": "images/00001.jpg",
+  "width": 1920,
+  "height": 1080,
+  "split": "train",
+  "group_key": "sequence-001"
+}</code></pre>
+
+        <div class="notice warning">
+          <strong>默认切分</strong>
+          <p>未显式设置 <code>split</code> 时，平台按 80% / 20% / 0% 划分训练集、验证集和测试集，随机种子为 42。目录名 <code>images/train</code> 或 <code>images/val</code> 不会自动决定切分。</p>
+        </div>
+      </section>
+
+      <section class="doc-section" id="register-dataset" data-search-title="登记数据集 分析目录 初始类别 相对路径">
+        <div class="section-heading"><span class="section-number">03</span><h2>登记数据集</h2></div>
+        <ol class="steps">
+          <li>进入<strong>数据集</strong>页面，点击右上角“登记服务器数据集”。</li>
+          <li>选择允许目录和任务类型，再输入相对路径或在目录浏览区定位数据集。</li>
+          <li>纯图片目录填写初始类别；COCO 数据集会自动读取类别。</li>
+          <li>填写数据集名称和可选描述，然后点击“分析目录”。</li>
+          <li>核对源格式、媒体数、标注数、类别和切分结果。</li>
+          <li>确认无误后点击“登记数据集”，等待后台任务完成并生成 v1。</li>
+        </ol>
+
+        <figure class="screenshot portrait">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/register-dataset.png" data-lightbox-caption="登记服务器数据集弹窗">
+            <img src="user-guide-assets/register-dataset.png" alt="登记服务器数据集弹窗，包含允许目录、任务类型、相对路径、初始类别、数据集名称和分析结果" loading="lazy">
+          </button>
+          <figcaption>分析结果应与源数据一致，再执行最终登记。</figcaption>
+        </figure>
+
+        <div class="notice">
+          <strong>分析之后不要修改源文件</strong>
+          <p>如果分析结果与预期不符，先修正服务器数据再重新分析。分析完成后又修改了源文件，平台会拒绝使用旧结果登记。</p>
+        </div>
+      </section>
+
+      <section class="doc-section" id="manage-dataset" data-search-title="管理数据集 文件预览 bbox 状态 版本 归档">
+        <div class="section-heading"><span class="section-number">04</span><h2>管理数据与版本</h2></div>
+
+        <h3>数据集状态</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态</th><th>含义</th></tr></thead>
+            <tbody>
+              <tr><td><span class="status gray">扫描中</span></td><td>平台正在分析或登记数据。</td></tr>
+              <tr><td><span class="status amber">待标注</span></td><td>当前版本没有可用于训练的完整标注。</td></tr>
+              <tr><td><span class="status amber">审核中</span></td><td>存在进行中的 Label Studio 审核任务。</td></tr>
+              <tr><td><span class="status green">可训练</span></td><td>当前版本校验通过并且包含标注。</td></tr>
+              <tr><td><span class="status amber">校验失败</span></td><td>数据格式、文件或标注没有通过校验。</td></tr>
+              <tr><td><span class="status gray">已归档</span></td><td>数据集只读，不能再创建审核或训练任务。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>查看文件与标注</h3>
+        <p>数据集详情的“文件”页签支持表格和网格视图。网格缩略图和右侧单图预览会将已有检测框叠加在原图上，不同颜色代表不同目标类别。</p>
+
+        <h3>版本与归档</h3>
+        <ul>
+          <li>已发布版本始终不可修改；每次审核完成后生成下一个版本。</li>
+          <li>训练任务必须绑定明确的数据集版本，后续版本不会改变已有训练输入。</li>
+          <li>归档会保留数据集、历史版本和文件，只是将数据集改为只读。</li>
+          <li>归档后不能创建新审核或训练任务；归档不是删除操作。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="label-studio" data-search-title="Label Studio 审核 标注 登录 结束审核 删除任务">
+        <div class="section-heading"><span class="section-number">05</span><h2>Label Studio 审核</h2></div>
+
+        <ol class="steps">
+          <li>在数据集详情中进入<strong>Label Studio 审核</strong>页签，基于当前版本创建审核任务。</li>
+          <li>等待任务显示为“就绪”或“审核中”，点击“在 Label Studio 中打开”。</li>
+          <li>新浏览器首次访问 Label Studio 时，使用部门提供的账号登录。</li>
+          <li>逐张修改、增加或删除目标框或分割标注，并提交完成的任务。</li>
+          <li>回到平台刷新任务，确认完成数量和进度。</li>
+          <li>确认全部结果后，点击“结束审核并生成版本”。</li>
+        </ol>
+
+        <figure class="screenshot">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/label-studio-review.png" data-lightbox-caption="在 Label Studio 中修正目标框">
+            <img src="user-guide-assets/label-studio-review.png" alt="Label Studio 标注页面，图片上显示一个待审核的红色目标框" loading="lazy">
+          </button>
+          <figcaption>在 Label Studio 中修正标注后，需要提交当前任务。</figcaption>
+        </figure>
+
+        <div class="notice warning">
+          <strong>当前不能在审核中删除图片</strong>
+          <p>导出结果必须包含全部输入图片任务。可以删除图片上的标注框，但不能通过 Label Studio 从数据集版本中移除图片。</p>
+        </div>
+
+        <h3>结束或删除审核任务</h3>
+        <ul>
+          <li>结束审核会导出结果并生成不可变的新版本，例如 v1 生成 v2。</li>
+          <li>仍需修改时，应基于新版本再创建一次审核任务。</li>
+          <li>删除“就绪”或“审核中”的任务会删除对应 Label Studio Project 和平台任务记录，但不会删除数据集及其已发布版本。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="unitrain" data-search-title="UnitTrain 训练 任务 指标 日志 YOLO 重试 停止">
+        <div class="section-heading"><span class="section-number">06</span><h2>UnitTrain 训练</h2></div>
+
+        <h3>提交前检查</h3>
+        <ul>
+          <li>页面显示“UnitTrain 在线”。</li>
+          <li>数据集状态为“可训练”。</li>
+          <li>选择包含完整标注的不可变版本。</li>
+          <li>确认任务类型、模型、批大小、学习率、图片尺寸和训练轮数。</li>
+        </ul>
+        <p>当前训练页面使用 Ultralytics 框架，并根据数据集任务类型提供对应的 YOLO 检测或实例分割模型选项。</p>
+
+        <h3>训练详情</h3>
+        <p>训练详情页集中显示运行状态、Loss 曲线、mAP 指标、训练参数和实时日志。运行中的任务可以停止；提交阶段失败且还没有创建 UnitTrain Run 时，可以执行“重试提交”。</p>
+
+        <figure class="screenshot">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/training-detail.png" data-lightbox-caption="训练详情、指标曲线与日志">
+            <img src="user-guide-assets/training-detail.png" alt="训练任务详情页，显示 Loss 曲线、mAP 曲线、最终指标、训练参数和日志" loading="lazy">
+          </button>
+          <figcaption>训练失败时，先查看页面顶部错误信息，再检查训练日志末尾。</figcaption>
+        </figure>
+      </section>
+
+      <section class="doc-section" id="models" data-search-title="模型 best.pt last.pt 指标 数据集版本">
+        <div class="section-heading"><span class="section-number">07</span><h2>查看模型</h2></div>
+        <p>训练成功后，平台会在“模型”页面生成模型记录。每条记录包含模型文件名、来源训练任务、数据集版本、任务类型、主要指标、文件大小和创建时间。</p>
+        <ul>
+          <li><code>best.pt</code> 通常是验证指标最优的权重。</li>
+          <li><code>last.pt</code> 是最后一个训练轮次保存的权重。</li>
+          <li>模型必须关联到明确的数据集版本，不能只记录数据集名称。</li>
+        </ul>
+
+        <figure class="screenshot">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/model-list.png" data-lightbox-caption="模型列表与来源版本">
+            <img src="user-guide-assets/model-list.png" alt="模型列表页面，展示 best.pt、last.pt、来源任务、数据集版本和 mAP 指标" loading="lazy">
+          </button>
+          <figcaption>比较模型时，应同时核对数据集版本、训练配置和评估指标。</figcaption>
+        </figure>
+      </section>
+
+      <section class="doc-section" id="system" data-search-title="系统管理 访问目录 服务连接 API Key 审计日志">
+        <div class="section-heading"><span class="section-number">08</span><h2>系统管理</h2></div>
+
+        <h3>访问目录</h3>
+        <p>登记数据集时只能选择已启用的来源目录。目录必须是服务器上的有效绝对路径，并且平台 API 和后台 Worker 都需要具有读取权限。</p>
+        <ol class="steps">
+          <li>进入<strong>系统管理 → 访问目录</strong>。</li>
+          <li>点击“添加目录”，填写显示名称和服务器绝对路径。</li>
+          <li>保存后确认目录处于启用状态，再回到数据集登记页面选择。</li>
+        </ol>
+
+        <figure class="screenshot">
+          <button class="image-button" type="button" data-lightbox-src="user-guide-assets/source-root-dialog.png" data-lightbox-caption="添加服务器来源目录">
+            <img src="user-guide-assets/source-root-dialog.png" alt="系统管理页面的添加来源目录弹窗，包含显示名称、服务器绝对路径和说明" loading="lazy">
+          </button>
+          <figcaption>来源目录用于限制平台能够浏览和登记的数据范围。</figcaption>
+        </figure>
+
+        <h3>服务连接与审计日志</h3>
+        <ul>
+          <li>“服务连接”显示 Label Studio 和 UnitTrain 的地址、版本、状态以及 API Key 是否已配置。</li>
+          <li>“测试连接”只验证平台后端能否连接对应服务，不代表浏览器一定能直接访问该地址。</li>
+          <li>“审计日志”记录数据集、版本、审核、训练、模型和系统操作，用于追踪资源变化和时间。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="troubleshooting" data-search-title="常见问题 离线 分析失败 等待后台任务 训练失败">
+        <div class="section-heading"><span class="section-number">09</span><h2>常见问题</h2></div>
+        <div class="faq">
+          <details>
+            <summary>登记时看不到目标服务器目录</summary>
+            <p>先到“系统管理 → 访问目录”确认目录已经添加并启用。如果目录存在但仍不可见，请联系维护人员检查平台容器的挂载路径和读取权限。</p>
+          </details>
+          <details>
+            <summary>分析提示存在多个标注源</summary>
+            <p>同一数据集目录只保留一个可识别的 COCO JSON 或 Label Studio 导出。将多份 COCO JSON 合并成一个文件后再重新分析。</p>
+          </details>
+          <details>
+            <summary>分析提示图片文件不存在</summary>
+            <p>检查 <code>images[].file_name</code> 是否相对于所选数据集目录，并确认大小写、扩展名和子目录完全一致，例如 <code>images/00001.jpg</code>。</p>
+          </details>
+          <details>
+            <summary>Label Studio 显示离线或无法打开</summary>
+            <p>先在“系统管理 → 服务连接”测试后端连接。如果平台显示在线但浏览器打不开，通常是 Label Studio 的公开地址或服务器端口没有对局域网开放，需要联系维护人员处理。</p>
+          </details>
+          <details>
+            <summary>任务长时间停留在等待后台任务</summary>
+            <p>不要重复提交同一操作。记录任务名称和发生时间，联系维护人员检查 Worker、Redis 和任务日志。</p>
+          </details>
+          <details>
+            <summary>UnitTrain 返回训练失败</summary>
+            <p>打开训练详情，先阅读错误摘要和日志末尾。若是提交阶段失败且没有 UnitTrain Run，可以尝试“重试提交”；其他错误请连同任务 ID 和日志交给维护人员。</p>
+          </details>
+        </div>
+      </section>
+
+      <section class="doc-section" id="limitations" data-search-title="当前限制 不支持 浏览器上传 删除图片 合并数据集">
+        <div class="section-heading"><span class="section-number">10</span><h2>当前限制</h2></div>
+        <ul>
+          <li>平台读取服务器目录，暂不支持直接从浏览器上传完整数据集。</li>
+          <li>一个数据集目录只能包含一个可识别的标注源。</li>
+          <li>Label Studio 审核阶段可以修改标注，但暂不支持从数据集版本中删除图片。</li>
+          <li>已发布版本不可编辑，所有变更通过新审核任务生成新版本。</li>
+          <li>数据集之间的合并、去重和图片增删功能尚未提供。</li>
+        </ul>
+        <div class="notice">
+          <strong>需要帮助时提供什么信息</strong>
+          <p>请记录数据集或任务名称、数据集版本、页面错误信息和发生时间。不要在聊天或截图中发送 API Token、密码等凭据。</p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        视觉数据集管理平台使用手册 · 此页面为独立文档，不依赖平台登录状态。
+      </footer>
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="截图预览">
+    <div class="lightbox-content">
+      <button class="lightbox-close" id="lightbox-close" type="button" aria-label="关闭截图预览" title="关闭">×</button>
+      <img id="lightbox-image" src="" alt="">
+      <div class="lightbox-caption" id="lightbox-caption"></div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const body = document.body;
+      if (window.self !== window.top) {
+        document.documentElement.classList.add('embedded');
+        const brandName = document.querySelector('.brand-name');
+        if (brandName) brandName.textContent = '使用手册目录';
+      }
+      const progressBar = document.getElementById('progress-bar');
+      const tocLinks = [...document.querySelectorAll('.toc-link')];
+      const sections = [...document.querySelectorAll('.doc-section')];
+      const menuButton = document.getElementById('mobile-toc-button');
+      const sidebarScrim = document.getElementById('sidebar-scrim');
+      const searchInput = document.getElementById('search-input');
+      const searchResults = document.getElementById('search-results');
+      const lightbox = document.getElementById('lightbox');
+      const lightboxImage = document.getElementById('lightbox-image');
+      const lightboxCaption = document.getElementById('lightbox-caption');
+      const lightboxClose = document.getElementById('lightbox-close');
+      let lastFocusedElement = null;
+
+      function updateProgress() {
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = scrollable > 0 ? (window.scrollY / scrollable) * 100 : 0;
+        progressBar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+      }
+
+      function setActiveSection(id) {
+        tocLinks.forEach(link => {
+          const active = link.getAttribute('href') === `#${id}`;
+          link.classList.toggle('active', active);
+          if (active) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      }
+
+      const observer = new IntersectionObserver(entries => {
+        const visible = entries
+          .filter(entry => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) setActiveSection(visible[0].target.id);
+      }, { rootMargin: '-78px 0px -72% 0px', threshold: 0 });
+
+      sections.forEach(section => observer.observe(section));
+      window.addEventListener('scroll', updateProgress, { passive: true });
+      updateProgress();
+
+      function closeToc() {
+        body.classList.remove('toc-open');
+        menuButton.setAttribute('aria-expanded', 'false');
+      }
+
+      menuButton.addEventListener('click', () => {
+        const open = !body.classList.contains('toc-open');
+        body.classList.toggle('toc-open', open);
+        menuButton.setAttribute('aria-expanded', String(open));
+      });
+      sidebarScrim.addEventListener('click', closeToc);
+      tocLinks.forEach(link => link.addEventListener('click', closeToc));
+
+      const searchIndex = sections.map(section => ({
+        id: section.id,
+        title: section.querySelector('h2')?.textContent.trim() || '',
+        text: `${section.dataset.searchTitle || ''} ${section.textContent}`.toLocaleLowerCase('zh-CN'),
+      }));
+
+      function closeSearch() {
+        searchResults.classList.remove('open');
+        searchResults.replaceChildren();
+      }
+
+      function renderSearch() {
+        const query = searchInput.value.trim().toLocaleLowerCase('zh-CN');
+        searchResults.replaceChildren();
+        if (!query) {
+          closeSearch();
+          return;
+        }
+
+        const matches = searchIndex.filter(item => item.text.includes(query)).slice(0, 7);
+        if (!matches.length) {
+          const empty = document.createElement('div');
+          empty.className = 'search-empty';
+          empty.textContent = '没有找到相关内容';
+          searchResults.append(empty);
+        } else {
+          matches.forEach(item => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'search-result';
+            button.setAttribute('role', 'option');
+            button.textContent = item.title;
+            button.addEventListener('click', () => {
+              document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              searchInput.value = '';
+              closeSearch();
+              searchInput.focus();
+            });
+            searchResults.append(button);
+          });
+        }
+        searchResults.classList.add('open');
+      }
+
+      searchInput.addEventListener('input', renderSearch);
+      searchInput.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          searchInput.value = '';
+          closeSearch();
+        }
+        if (event.key === 'Enter') {
+          const firstResult = searchResults.querySelector('.search-result');
+          if (firstResult) firstResult.click();
+        }
+      });
+      document.addEventListener('click', event => {
+        if (!event.target.closest('.search')) closeSearch();
+      });
+
+      function closeLightbox() {
+        lightbox.classList.remove('open');
+        lightboxImage.src = '';
+        body.classList.remove('no-scroll');
+        if (lastFocusedElement) lastFocusedElement.focus();
+      }
+
+      document.querySelectorAll('.image-button').forEach(button => {
+        button.addEventListener('click', () => {
+          lastFocusedElement = button;
+          lightboxImage.src = button.dataset.lightboxSrc;
+          lightboxImage.alt = button.querySelector('img')?.alt || '截图预览';
+          lightboxCaption.textContent = button.dataset.lightboxCaption || '';
+          lightbox.classList.add('open');
+          body.classList.add('no-scroll');
+          lightboxClose.focus();
+        });
+      });
+
+      lightboxClose.addEventListener('click', closeLightbox);
+      lightbox.addEventListener('click', event => {
+        if (event.target === lightbox) closeLightbox();
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && lightbox.classList.contains('open')) closeLightbox();
+      });
+
+      document.getElementById('print-button').addEventListener('click', () => window.print());
+    })();
+  </script>
+</body>
+</html>

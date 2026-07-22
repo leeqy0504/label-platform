@@ -4,7 +4,10 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "sync:guide": "node scripts/sync-user-guide.mjs",
+    "prebuild": "npm run sync:guide",
     "build": "vite build",
+    "predev": "npm run sync:guide",
     "dev": "vite",
     "test": "vitest",
     "test:run": "vitest run",

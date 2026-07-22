@@ -10,6 +10,7 @@ const TrainingDetailPage = lazy(() => import('./pages/TrainingDetailPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
 const ModelDetailPage = lazy(() => import('./pages/ModelDetailPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
+const GuidePage = lazy(() => import('./pages/GuidePage'));
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: 'models', element: <ModelsPage /> },
       { path: 'models/:id', element: <ModelDetailPage /> },
       { path: 'admin', element: <SystemPage /> },
+      { path: 'guide', element: <GuidePage /> },
     ],
   },
 ]);
