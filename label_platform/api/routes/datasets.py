@@ -1,3 +1,5 @@
+import json
+import math
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
@@ -407,6 +409,7 @@ def list_versions(
 def list_items(
     dataset_id: str,
     version_id: str,
+    request: Request,
     session: SessionDependency,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
@@ -442,8 +445,16 @@ def list_items(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    annotations_by_sample = _bbox_annotations_by_sample(
+        request.app.state.settings.managed_data_root,
+        version,
+        {item.sample_key for item in items},
+    )
     return {
-        "data": [_item_response(item) for item in items],
+        "data": [
+            _item_response(item, annotations_by_sample.get(item.sample_key, []))
+            for item in items
+        ],
         "meta": {"page": page, "page_size": page_size, "total": total},
     }
 
@@ -604,7 +615,97 @@ def _version_response(
     }
 
 
-def _item_response(item: DatasetItem) -> dict[str, object]:
+def _bbox_annotations_by_sample(
+    managed_root: Path,
+    version: DatasetVersion,
+    sample_keys: set[str],
+) -> dict[str, list[dict[str, object]]]:
+    if not sample_keys or version.root_path is None or version.annotation_path is None:
+        return {}
+
+    try:
+        resolved_managed_root = managed_root.resolve(strict=True)
+        version_relative = PurePosixPath(version.root_path)
+        annotation_relative = PurePosixPath(version.annotation_path)
+        if (
+            version_relative.is_absolute()
+            or annotation_relative.is_absolute()
+            or ".." in version_relative.parts
+            or ".." in annotation_relative.parts
+            or "\\" in version.root_path
+            or "\\" in version.annotation_path
+        ):
+            return {}
+        version_root = (resolved_managed_root / version_relative).resolve(strict=True)
+        annotation_path = (version_root / annotation_relative).resolve(strict=True)
+        if (
+            not version_root.is_relative_to(resolved_managed_root)
+            or not annotation_path.is_relative_to(version_root)
+            or not annotation_path.is_file()
+        ):
+            return {}
+        payload: Any = json.loads(annotation_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+    images = payload.get("images")
+    annotations = payload.get("annotations")
+    if not isinstance(images, list) or not isinstance(annotations, list):
+        return {}
+
+    sample_by_image_id: dict[int, str] = {}
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        image_id = image.get("id")
+        sample_key = image.get("sample_key")
+        if (
+            isinstance(image_id, int)
+            and not isinstance(image_id, bool)
+            and isinstance(sample_key, str)
+            and sample_key in sample_keys
+        ):
+            sample_by_image_id[image_id] = sample_key
+
+    result: dict[str, list[dict[str, object]]] = {}
+    for annotation in annotations:
+        if not isinstance(annotation, dict):
+            continue
+        image_id = annotation.get("image_id")
+        category_id = annotation.get("category_id")
+        bbox = annotation.get("bbox")
+        if (
+            not isinstance(image_id, int)
+            or isinstance(image_id, bool)
+            or not isinstance(category_id, int)
+            or isinstance(category_id, bool)
+            or not isinstance(bbox, list)
+            or len(bbox) != 4
+        ):
+            continue
+        sample_key = sample_by_image_id.get(image_id)
+        if sample_key is None or any(
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            for value in bbox
+        ):
+            continue
+        normalized_bbox = [float(value) for value in bbox]
+        if normalized_bbox[2] <= 0 or normalized_bbox[3] <= 0:
+            continue
+        result.setdefault(sample_key, []).append(
+            {"category_id": category_id, "bbox": normalized_bbox}
+        )
+    return result
+
+
+def _item_response(
+    item: DatasetItem,
+    annotations: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     return {
         "id": item.id,
         "sample_key": item.sample_key,
@@ -617,5 +718,6 @@ def _item_response(item: DatasetItem) -> dict[str, object]:
         "split": item.split,
         "status": item.status,
         "annotation_count": item.annotation_count,
+        "annotations": annotations or [],
         "group_key": item.group_key,
     }

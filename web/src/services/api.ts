@@ -77,6 +77,10 @@ interface ApiItem {
   split: 'train' | 'val' | 'test';
   status: 'annotated' | 'unannotated' | 'partial';
   annotation_count: number;
+  annotations: Array<{
+    category_id: number;
+    bbox: [number, number, number, number];
+  }>;
   group_key: string | null;
 }
 
@@ -434,8 +438,12 @@ export async function listMediaFiles(
     size: item.file_size,
     checksum: item.sha256,
     annotationCount: item.annotation_count,
+    annotations: item.annotations.map(annotation => ({
+      categoryId: annotation.category_id,
+      bbox: annotation.bbox,
+    })),
     hasMask: dataset.sources?.[0]?.task_type === 'instance_segmentation' && item.status === 'annotated',
-    hasBbox: dataset.sources?.[0]?.task_type === 'detection' && item.status === 'annotated',
+    hasBbox: item.annotations.length > 0,
     hasAnomaly: false,
     thumbnailUrl: `/api/datasets/${datasetId}/versions/${versionId}/items/${item.id}/media`,
     annotationStatus: item.status,

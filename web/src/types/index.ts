@@ -45,6 +45,11 @@ export interface DatasetVersion {
   cocoFilePath: string;
 }
 
+export interface BoundingBoxAnnotation {
+  categoryId: number;
+  bbox: [number, number, number, number];
+}
+
 export interface MediaFile {
   id: string;
   filename: string;
@@ -55,6 +60,7 @@ export interface MediaFile {
   size: number;
   checksum: string;
   annotationCount: number;
+  annotations: BoundingBoxAnnotation[];
   hasMask: boolean;
   hasBbox: boolean;
   hasAnomaly: boolean;

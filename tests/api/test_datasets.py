@@ -1,9 +1,10 @@
 import hashlib
+import json
 
 import pytest
 from sqlalchemy import select
 
-from label_platform.db.models import AllowedRoot, AuditEvent, DatasetItem
+from label_platform.db.models import AllowedRoot, AuditEvent, DatasetItem, DatasetVersion
 from label_platform.jobs.queue import InlineJobQueue
 from label_platform.jobs.tasks import JobRunner
 
@@ -252,6 +253,63 @@ def test_dataset_detail_versions_items_and_media_are_scoped(
         f"/api/datasets/{dataset_id}/versions/{version_id}/items/{item['id']}/media"
     )
     assert escaped.status_code == 404
+
+
+def test_dataset_items_include_valid_coco_bounding_boxes(
+    dataset_api,
+    image_factory,
+):
+    client, session_factory, _, _, root_id, source_root, managed_root = dataset_api
+    image_factory(source_root / "incoming/frame.jpg", size=(20, 10))
+    analysis = analyze(client, root_id)
+    registration = client.post(
+        "/api/datasets/register",
+        json=registration_payload(root_id, analysis["result"]["fingerprint"]),
+    ).json()
+    result = client.get(f"/api/jobs/{registration['job_id']}").json()["result"]
+
+    with session_factory() as session:
+        version = session.get(DatasetVersion, result["version_id"])
+        assert version is not None
+        assert version.root_path is not None
+        assert version.annotation_path is not None
+        item = session.scalar(select(DatasetItem).where(DatasetItem.version_id == version.id))
+        assert item is not None
+        annotation_path = managed_root / version.root_path / version.annotation_path
+        annotation_path.chmod(0o644)
+        annotation_path.write_text(
+            json.dumps(
+                {
+                    "images": [
+                        {
+                            "id": 7,
+                            "sample_key": item.sample_key,
+                            "file_name": item.relative_path,
+                            "width": 20,
+                            "height": 10,
+                        }
+                    ],
+                    "annotations": [
+                        {"image_id": 7, "category_id": 1, "bbox": [2, 1, 8, 4]},
+                        {"image_id": 7, "category_id": 2, "bbox": [10, 2, 5, 6]},
+                        {"image_id": 7, "category_id": 3, "bbox": [0, 0, 0, 2]},
+                    ],
+                    "categories": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        annotation_path.chmod(0o444)
+
+    response = client.get(
+        f"/api/datasets/{result['dataset_id']}/versions/{result['version_id']}/items"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"][0]["annotations"] == [
+        {"category_id": 1, "bbox": [2.0, 1.0, 8.0, 4.0]},
+        {"category_id": 2, "bbox": [10.0, 2.0, 5.0, 6.0]},
+    ]
 
 
 def test_archive_is_audited_and_does_not_delete_managed_files(

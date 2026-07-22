@@ -23,6 +23,67 @@ function AnnotationBadge({ status }: { status: MediaFile['annotationStatus'] }) 
   return <span className={cn('text-xs px-1.5 py-0.5 rounded', cfg)}>{label}</span>;
 }
 
+const BBOX_COLORS = [
+  '#ef4444',
+  '#22c55e',
+  '#3b82f6',
+  '#f59e0b',
+  '#a855f7',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+];
+
+function bboxColor(categoryId: number) {
+  const index = ((categoryId - 1) % BBOX_COLORS.length + BBOX_COLORS.length) % BBOX_COLORS.length;
+  return BBOX_COLORS[index];
+}
+
+export function AnnotatedImage({
+  file,
+  loading,
+}: {
+  file: MediaFile;
+  loading?: 'eager' | 'lazy';
+}) {
+  const canRenderOverlay = file.width > 0 && file.height > 0 && file.annotations.length > 0;
+
+  return (
+    <div className="relative flex size-full items-center justify-center overflow-hidden">
+      <img
+        src={file.thumbnailUrl}
+        alt={file.filename}
+        className="size-full object-contain"
+        loading={loading}
+        onError={event => { (event.currentTarget as HTMLImageElement).style.display = 'none'; }}
+      />
+      {canRenderOverlay && (
+        <svg
+          data-testid={`bbox-overlay-${file.id}`}
+          viewBox={`0 0 ${file.width} ${file.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="pointer-events-none absolute inset-0 size-full"
+          aria-hidden="true"
+        >
+          {file.annotations.map((annotation, index) => (
+            <rect
+              key={`${annotation.categoryId}-${annotation.bbox.join('-')}-${index}`}
+              x={annotation.bbox[0]}
+              y={annotation.bbox[1]}
+              width={annotation.bbox[2]}
+              height={annotation.bbox[3]}
+              fill="none"
+              stroke={bboxColor(annotation.categoryId)}
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </svg>
+      )}
+    </div>
+  );
+}
+
 function FileInspector({ file, onClose }: { file: MediaFile; onClose: () => void }) {
   return (
     <div className="absolute inset-0 z-20 w-full shrink-0 border-l border-gray-200 bg-white flex flex-col sm:static sm:w-72">
@@ -34,12 +95,7 @@ function FileInspector({ file, onClose }: { file: MediaFile; onClose: () => void
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div className="aspect-video bg-gray-100 rounded overflow-hidden flex items-center justify-center">
-          <img
-            src={file.thumbnailUrl}
-            alt={file.filename}
-            className="w-full h-full object-cover"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
+          <AnnotatedImage file={file} loading="eager" />
         </div>
         <div className="space-y-2 text-xs">
           {[
@@ -258,12 +314,7 @@ export function FilesTab({ dataset }: { dataset: Dataset }) {
                   )}
                 >
                   <div className="aspect-square bg-gray-100">
-                    <img
-                      src={f.thumbnailUrl}
-                      alt={f.filename}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
+                    <AnnotatedImage file={f} loading="lazy" />
                   </div>
                   {f.hasAnomaly && (
                     <div className="absolute top-1 right-1">
