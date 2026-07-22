@@ -142,10 +142,6 @@ export function OverviewTab({ dataset }: { dataset: Dataset }) {
                 <span className="text-gray-500 w-14 shrink-0">状态</span>
                 <StatusBadge status={dataset.status} />
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-gray-500 w-14 shrink-0">创建人</span>
-                <span className="text-gray-700">{dataset.createdBy}</span>
-              </div>
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-500 w-14 shrink-0">数据路径</span>
                 <span className="text-gray-700 truncate font-mono text-[11px]">{dataset.rootPath}</span>

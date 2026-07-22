@@ -1,25 +1,23 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
+from label_platform.api.dependencies import SessionDependency
 from label_platform.datasets.paths import (
     SourcePathError,
     list_safe_children,
     resolve_approved_root,
 )
-from label_platform.db.models import AllowedRoot, AuditEvent, User
-from label_platform.domain.enums import UserRole
+from label_platform.db.models import AllowedRoot, AuditEvent
 
 
 router = APIRouter(tags=["source roots"])
-AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 
 
 class SourceRootResponse(BaseModel):
@@ -64,19 +62,16 @@ class SourceTreeResponse(BaseModel):
 def _visible_root(
     session: Session,
     root_id: str,
-    user: User,
 ) -> AllowedRoot:
     root = session.get(AllowedRoot, root_id)
-    if root is None or (not root.is_active and user.role is not UserRole.ADMIN):
+    if root is None or not root.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source root not found")
     return root
 
 
 @router.get("/api/source-roots", response_model=list[SourceRootResponse])
-def list_source_roots(session: SessionDependency, user: CurrentUser) -> list[AllowedRoot]:
-    query = select(AllowedRoot)
-    if user.role is not UserRole.ADMIN:
-        query = query.where(AllowedRoot.is_active.is_(True))
+def list_source_roots(session: SessionDependency) -> list[AllowedRoot]:
+    query = select(AllowedRoot).where(AllowedRoot.is_active.is_(True))
     query = query.order_by(AllowedRoot.label, AllowedRoot.id)
     return list(session.scalars(query).all())
 
@@ -88,10 +83,9 @@ def list_source_roots(session: SessionDependency, user: CurrentUser) -> list[All
 def browse_source_root(
     root_id: str,
     session: SessionDependency,
-    user: CurrentUser,
     path: str = "",
 ) -> SourceTreeResponse:
-    root = _visible_root(session, root_id, user)
+    root = _visible_root(session, root_id)
     try:
         entries = list_safe_children(Path(root.path), path)
     except SourcePathError as exc:
@@ -118,7 +112,6 @@ def browse_source_root(
 def create_source_root(
     payload: SourceRootCreate,
     session: SessionDependency,
-    admin: AdminUser,
 ) -> AllowedRoot:
     submitted = Path(payload.path)
     if not submitted.is_absolute():
@@ -136,7 +129,6 @@ def create_source_root(
         label=payload.label.strip(),
         description=payload.description.strip(),
         is_active=True,
-        created_by_id=admin.id,
     )
     session.add(root)
     try:
@@ -150,7 +142,6 @@ def create_source_root(
 
     session.add(
         AuditEvent(
-            actor_user_id=admin.id,
             action="source_root.created",
             resource_type="source_root",
             resource_id=root.id,
@@ -170,7 +161,6 @@ def update_source_root(
     root_id: str,
     payload: SourceRootUpdate,
     session: SessionDependency,
-    admin: AdminUser,
 ) -> AllowedRoot:
     root = session.get(AllowedRoot, root_id)
     if root is None:
@@ -189,7 +179,6 @@ def update_source_root(
 
     session.add(
         AuditEvent(
-            actor_user_id=admin.id,
             action="source_root.updated",
             resource_type="source_root",
             resource_id=root.id,

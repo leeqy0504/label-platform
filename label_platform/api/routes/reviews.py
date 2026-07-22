@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, cast
+from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
-from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
-from label_platform.db.models import BackgroundJob, Dataset, ReviewSession, User
-from label_platform.domain.enums import JobStatus, ReviewStatus, UserRole
+from label_platform.api.dependencies import SessionDependency
+from label_platform.db.models import BackgroundJob, Dataset, ReviewSession
+from label_platform.domain.enums import JobStatus, ReviewStatus
 from label_platform.integrations.labelstudio import LabelStudioConnector
 from label_platform.jobs.queue import JobQueue
 from label_platform.reviews.service import (
@@ -21,10 +21,6 @@ from label_platform.reviews.service import (
 
 router = APIRouter(prefix="/api/reviews", tags=["reviews"])
 integration_router = APIRouter(prefix="/api/integrations/label-studio", tags=["integrations"])
-ReviewOperator = Annotated[
-    User,
-    Depends(require_roles(UserRole.ADMIN, UserRole.DATA_ENGINEER)),
-]
 
 
 class CreateReviewRequest(BaseModel):
@@ -51,7 +47,6 @@ class ReviewResponse(BaseModel):
     status: ReviewStatus
     config_hash: str
     error_summary: dict[str, object]
-    created_by: str
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
@@ -76,14 +71,12 @@ def create_review(
     payload: CreateReviewRequest,
     request: Request,
     session: SessionDependency,
-    operator: ReviewOperator,
 ) -> ReviewResponse:
     try:
         review = _workflow(request).create_session(
             dataset_id=payload.dataset_id,
             input_version_id=payload.input_version_id,
-            created_by_id=operator.id,
-            idempotency_key=f"{operator.id}:{payload.idempotency_key}",
+            idempotency_key=payload.idempotency_key,
         )
     except ReviewConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -105,7 +98,6 @@ def create_review(
             status=JobStatus.PENDING,
             stage="pending",
             result={"request": {"review_session_id": review.id}},
-            created_by_id=operator.id,
         )
         session.add(job)
         session.commit()
@@ -128,7 +120,6 @@ def create_review(
 def list_reviews(
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
     dataset_id: str | None = None,
     search: str | None = Query(default=None, max_length=200),
     page: int = Query(default=1, ge=1),
@@ -176,7 +167,6 @@ def get_review(
     review_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> ReviewResponse:
     return _review_response(_require_review(session, review_id), request=request, job_id=_latest_job_id(session, review_id))
 
@@ -186,11 +176,10 @@ def delete_review(
     review_id: str,
     request: Request,
     session: SessionDependency,
-    operator: ReviewOperator,
 ) -> Response:
     _require_review(session, review_id)
     try:
-        _workflow(request).delete_session(review_id, deleted_by_id=operator.id)
+        _workflow(request).delete_session(review_id)
     except ReviewConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ReviewWorkflowError as exc:
@@ -203,7 +192,6 @@ def sync_review(
     review_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> ReviewResponse:
     try:
         _workflow(request).reconcile(review_id)
@@ -218,7 +206,6 @@ def complete_review(
     review_id: str,
     request: Request,
     session: SessionDependency,
-    operator: ReviewOperator,
 ) -> ReviewResponse:
     job = session.scalar(
         select(BackgroundJob).where(
@@ -246,7 +233,6 @@ def complete_review(
             status=JobStatus.PENDING,
             stage="pending",
             result={"request": {"review_session_id": review_id}},
-            created_by_id=operator.id,
         )
         session.add(job)
         session.commit()
@@ -273,7 +259,6 @@ def retry_review(
     review_id: str,
     request: Request,
     session: SessionDependency,
-    _: ReviewOperator,
 ) -> ReviewResponse:
     try:
         review = _workflow(request).prepare_retry(review_id)
@@ -314,7 +299,7 @@ def retry_review(
 
 
 @integration_router.get("/health")
-def label_studio_health(request: Request, _: CurrentUser) -> dict[str, str]:
+def label_studio_health(request: Request) -> dict[str, str]:
     connector = cast(LabelStudioConnector, request.app.state.label_studio_connector)
     try:
         return {"status": "online", "version": connector.health()}
@@ -359,7 +344,6 @@ def _review_response(
         status=review.status,
         config_hash=review.config_hash,
         error_summary=cast(dict[str, object], review.error_summary),
-        created_by=review.created_by.name,
         started_at=review.started_at,
         completed_at=review.completed_at,
         created_at=review.created_at,

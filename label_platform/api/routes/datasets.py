@@ -1,13 +1,13 @@
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Any, Literal, cast
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
+from label_platform.api.dependencies import SessionDependency
 from label_platform.datasets.paths import SourcePathError, resolve_source_path
 from label_platform.db.models import (
     AllowedRoot,
@@ -18,17 +18,12 @@ from label_platform.db.models import (
     DatasetSource,
     DatasetVersion,
     TrainingRun,
-    User,
 )
-from label_platform.domain.enums import JobStatus, SourceFormat, TaskType, UserRole, VersionStatus
+from label_platform.domain.enums import JobStatus, SourceFormat, TaskType, VersionStatus
 from label_platform.jobs.queue import JobQueue
 
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
-DatasetOperator = Annotated[
-    User,
-    Depends(require_roles(UserRole.ADMIN, UserRole.DATA_ENGINEER)),
-]
 
 
 class SplitRequest(BaseModel):
@@ -142,12 +137,11 @@ def analyze_dataset(
     payload: DatasetAnalyzeRequest,
     request: Request,
     session: SessionDependency,
-    operator: DatasetOperator,
 ) -> JobAccepted:
     root = _active_root(session, payload.source_root_id)
     source_path = _resolve_selection(root, payload.relative_path)
     request_payload = _selection_request(payload, source_path)
-    key = f"analysis:{operator.id}:{payload.idempotency_key}"
+    key = f"analysis:{payload.idempotency_key}"
     existing = _idempotent_job(session, key=key, request_payload=request_payload)
     if existing is not None:
         return JobAccepted(job_id=existing.id, status=existing.status)
@@ -158,18 +152,15 @@ def analyze_dataset(
         status=JobStatus.PENDING,
         stage="pending",
         result={"request": request_payload},
-        created_by_id=operator.id,
     )
     session.add(job)
     session.flush()
     session.add(
         AuditEvent(
-            actor_user_id=operator.id,
             action="dataset.analysis_requested",
             resource_type="background_job",
             resource_id=job.id,
             details={"source_root_id": root.id, "relative_path": payload.relative_path},
-            ip_address=request.client.host if request.client else None,
         )
     )
     session.commit()
@@ -189,7 +180,6 @@ def register_dataset(
     payload: DatasetRegisterRequest,
     request: Request,
     session: SessionDependency,
-    operator: DatasetOperator,
 ) -> JobAccepted:
     root = _active_root(session, payload.source_root_id)
     source_path = _resolve_selection(root, payload.relative_path)
@@ -200,14 +190,13 @@ def register_dataset(
         "description": payload.description,
         "analysis_fingerprint": payload.analysis_fingerprint,
     }
-    key = f"registration:{operator.id}:{payload.idempotency_key}"
+    key = f"registration:{payload.idempotency_key}"
     existing = _idempotent_job(session, key=key, request_payload=request_payload)
     if existing is not None:
         return JobAccepted(job_id=existing.id, status=existing.status)
 
     analysis = _find_analysis(
         session,
-        operator=operator,
         fingerprint=payload.analysis_fingerprint,
         selection=selection,
     )
@@ -230,7 +219,6 @@ def register_dataset(
         name=payload.name,
         description=payload.description.strip(),
         status="scanning",
-        created_by_id=operator.id,
     )
     source = DatasetSource(
         dataset=dataset,
@@ -271,21 +259,17 @@ def register_dataset(
                 **request_payload,
                 "dataset_id": dataset.id,
                 "dataset_source_id": source.id,
-                "created_by_id": operator.id,
             }
         },
-        created_by_id=operator.id,
     )
     session.add(job)
     session.flush()
     session.add(
         AuditEvent(
-            actor_user_id=operator.id,
             action="dataset.registration_requested",
             resource_type="dataset",
             resource_id=dataset.id,
             details={"job_id": job.id, "source_id": source.id},
-            ip_address=request.client.host if request.client else None,
         )
     )
     session.commit()
@@ -303,7 +287,6 @@ def register_dataset(
 def _find_analysis(
     session: SessionDependency,
     *,
-    operator: User,
     fingerprint: str,
     selection: dict[str, object],
 ) -> BackgroundJob | None:
@@ -311,7 +294,6 @@ def _find_analysis(
         select(BackgroundJob).where(
             BackgroundJob.job_type == "dataset_analysis",
             BackgroundJob.status == JobStatus.SUCCEEDED,
-            BackgroundJob.created_by_id == operator.id,
         )
     )
     for job in jobs:
@@ -340,7 +322,6 @@ def _mark_enqueue_failed(session: SessionDependency, job_id: str, error: Excepti
 @router.get("")
 def list_datasets(
     session: SessionDependency,
-    _: CurrentUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     search: str | None = Query(default=None, max_length=200),
@@ -385,7 +366,6 @@ def list_datasets(
 def get_dataset(
     dataset_id: str,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> dict[str, object]:
     dataset = session.get(Dataset, dataset_id)
     if dataset is None:
@@ -410,7 +390,6 @@ def get_dataset(
 def list_versions(
     dataset_id: str,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> dict[str, object]:
     _require_dataset(session, dataset_id)
     versions = session.scalars(
@@ -429,7 +408,6 @@ def list_items(
     dataset_id: str,
     version_id: str,
     session: SessionDependency,
-    _: CurrentUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     search: str | None = Query(default=None, max_length=500),
@@ -477,7 +455,6 @@ def get_item_media(
     item_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> FileResponse:
     version = _require_version(session, dataset_id, version_id)
     item = session.scalar(
@@ -513,19 +490,16 @@ def archive_dataset(
     dataset_id: str,
     request: Request,
     session: SessionDependency,
-    operator: DatasetOperator,
 ) -> dict[str, object]:
     dataset = _require_dataset(session, dataset_id)
     if dataset.status != "archived":
         dataset.status = "archived"
         session.add(
             AuditEvent(
-                actor_user_id=operator.id,
                 action="dataset.archived",
                 resource_type="dataset",
                 resource_id=dataset.id,
                 details={},
-                ip_address=request.client.host if request.client else None,
             )
         )
         session.commit()
@@ -593,7 +567,6 @@ def _dataset_summary(session: SessionDependency, dataset: Dataset) -> dict[str, 
         "status": dataset.status,
         "created_at": dataset.created_at,
         "updated_at": dataset.updated_at,
-        "created_by": dataset.created_by.name,
         "current_version": current.version_number if current else None,
         "current_version_id": current.id if current else None,
         "item_count": current.item_count if current else 0,
@@ -627,7 +600,6 @@ def _version_response(
         )
         or 0,
         "validation_result": version.validation_result,
-        "created_by": version.created_by.name if version.created_by else None,
         "created_at": version.created_at,
     }
 

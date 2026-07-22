@@ -25,7 +25,6 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_OPTIONS: { value: DatasetStatus | ''; label: string }[] = [
   { value: '', label: '全部状态' },
@@ -47,8 +46,6 @@ function formatSize(mb: number) {
 }
 
 export default function DatasetsPage() {
-  const { user } = useAuth();
-  const canOperate = user?.role === 'admin' || user?.role === 'data_engineer';
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<DatasetStatus | ''>('');
@@ -100,13 +97,13 @@ export default function DatasetsPage() {
             </span>
           )}
         </div>
-        {canOperate && <button
+        <button
           onClick={() => setRegisterOpen(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors shrink-0"
         >
           <Plus className="size-4" />
           登记服务器数据集
-        </button>}
+        </button>
       </div>
 
       {/* Filters */}
@@ -153,7 +150,6 @@ export default function DatasetsPage() {
               <th className="text-right px-3 py-2.5 text-xs font-medium text-gray-500 w-24">标注数</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-24">状态</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-28">更新时间</th>
-              <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-20">创建人</th>
               <th className="w-8" />
             </tr>
           </thead>
@@ -203,7 +199,6 @@ export default function DatasetsPage() {
                   <StatusBadge status={ds.status} />
                 </td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{formatDate(ds.updatedAt)}</td>
-                <td className="px-3 py-2.5 text-xs text-gray-500">{ds.createdBy}</td>
                 <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -215,26 +210,26 @@ export default function DatasetsPage() {
                       <DropdownMenuItem onClick={() => navigate(`/datasets/${ds.id}`)}>
                         <Eye className="size-3.5 mr-2" />查看详情
                       </DropdownMenuItem>
-                      {canOperate && <DropdownMenuItem
+                      <DropdownMenuItem
                         onClick={() => navigate(`/datasets/${ds.id}?tab=review`)}
                         disabled={!['trainable', 'reviewing', 'pending_annotation'].includes(ds.status)}
                       >
                         <ClipboardCheck className="size-3.5 mr-2" />创建审核任务
-                      </DropdownMenuItem>}
-                      {canOperate && <DropdownMenuItem
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         onClick={() => navigate(`/datasets/${ds.id}?tab=training`)}
                         disabled={ds.status !== 'trainable'}
                       >
                         <Play className="size-3.5 mr-2" />提交训练
-                      </DropdownMenuItem>}
-                      {canOperate && <DropdownMenuSeparator />}
-                      {canOperate && <DropdownMenuItem
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
                         onClick={() => setArchiveTarget(ds)}
                         disabled={ds.status === 'archived'}
                         className="text-amber-700"
                       >
                         <Archive className="size-3.5 mr-2" />归档
-                      </DropdownMenuItem>}
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </td>

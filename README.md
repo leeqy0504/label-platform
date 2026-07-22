@@ -1,5 +1,7 @@
 # Label Platform
 
+面向平台使用人员的操作说明见 [视觉数据集管理平台使用手册](docs/user-guide.md)。
+
 内部视觉数据集平台，统一管理服务器目录登记、不可变数据集版本、Label Studio 人工审核和 UniTrain 训练流程。当前仓库已包含平台 API、后台任务、数据规范化/校验、真实前端，以及原有 UniTrain 源码。
 
 ## Prerequisites
@@ -249,7 +251,6 @@ mkdir -p var/sources var/managed
 uv sync
 docker compose up -d postgres redis
 uv run alembic upgrade head
-uv run label-platform create-admin --email admin@example.test --name Administrator
 uv run uvicorn label_platform.api.app:create_app_from_env --factory --host 127.0.0.1 --port 8000
 ```
 
@@ -275,7 +276,7 @@ npm ci
 npm run dev
 ```
 
-前端地址为 `http://127.0.0.1:5173`，Vite 将 `/api` 转发到 `127.0.0.1:8000`。管理员登录后先在系统管理中配置允许读取的来源根目录；平台只接受该白名单下的相对路径。
+前端地址为 `http://127.0.0.1:5173`，Vite 将 `/api` 转发到 `127.0.0.1:8000`。平台面向部门内部使用，不设置平台登录或用户权限；所有打开平台页面的人员都可以使用数据集、审核、训练和系统管理功能。登记数据集前，先在系统管理中配置允许读取的来源根目录；平台只接受该白名单下的相对路径。
 
 本机已安装的 Label Studio 独立环境可按以下方式启动，Local Files 根目录必须与平台 managed 根目录一致：
 
@@ -286,6 +287,8 @@ LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT="$(pwd)/var/managed" \
 ```
 
 首次登录 Label Studio 后生成个人 API Token，把它写入本机 `.env` 的 `PLATFORM_LABEL_STUDIO_API_TOKEN`。同时将 `PLATFORM_LABEL_STUDIO_MOUNT_ROOT` 设置为 `var/managed` 的绝对路径。平台通过 REST 创建独立项目、Local Files storage 和任务，不读取或修改 Label Studio SQLite。项目就绪后，平台会打开 `/projects/<id>/data` 深链接。
+
+`PLATFORM_LABEL_STUDIO_API_TOKEN` 只认证“平台后端 -> Label Studio API”的请求，不会给浏览器创建登录 Cookie。每个新的浏览器配置仍需登录 Label Studio 一次。Label Studio Community 当前没有受支持的匿名 UI 开关；部门内部最简单的做法是使用共享账号并保留浏览器会话。若必须统一免登录，应接入现有 SSO/反向代理认证，而不是把 API Token 或共享密码暴露到前端。
 
 UniTrain 通过独立的薄 HTTP 服务接入。它不会调用带显存清理提示的 CLI，也不会自动安装框架环境：
 
@@ -305,7 +308,6 @@ UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090 \
 
 ```bash
 cp .env.example .env
-openssl rand -hex 32  # 生成 PLATFORM_SESSION_SECRET
 openssl rand -hex 32  # 生成 PLATFORM_UNITRAIN_API_TOKEN
 ```
 
@@ -316,14 +318,12 @@ POSTGRES_DB=platform
 POSTGRES_USER=platform
 POSTGRES_PASSWORD=<strong-database-password>
 
-PLATFORM_SESSION_SECRET=<first-random-value>
 PLATFORM_ENVIRONMENT=production
-PLATFORM_SECURE_COOKIES=false
 
 # API/worker 在 Docker 网络中访问 Label Studio 的内部地址。
 PLATFORM_LABEL_STUDIO_URL=http://label-studio:8080
-# 浏览器跳转地址。使用 SSH 隧道时保持 127.0.0.1；有反向代理时填写 HTTPS 域名。
-PLATFORM_LABEL_STUDIO_PUBLIC_URL=http://127.0.0.1:8081
+# 浏览器跳转地址。同一局域网访问时填写服务器 IP；有反向代理时填写 HTTPS 域名。
+PLATFORM_LABEL_STUDIO_PUBLIC_URL=http://10.10.16.58:8081
 PLATFORM_LABEL_STUDIO_API_TOKEN=
 
 PLATFORM_UNITRAIN_URL=http://unitrain-api:8090
@@ -339,7 +339,7 @@ UNITRAIN_EXPORT_PATH=./var/unitrain/exports
 UNITRAIN_RUN_PATH=./var/unitrain/runs
 ```
 
-`PLATFORM_LABEL_STUDIO_URL` 与 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 用途不同：前者必须能从 API/worker 容器访问，后者必须能从操作者的浏览器访问。生产环境启用 HTTPS 后应把 `PLATFORM_SECURE_COOKIES` 改为 `true`。
+`PLATFORM_LABEL_STUDIO_URL` 与 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 用途不同：前者必须能从 API/worker 容器访问，后者必须能从操作者的浏览器访问。平台 Web 容器默认监听 `0.0.0.0:8080`，同一局域网可直接打开 `http://10.10.16.58:8080`，根地址会自动进入 `/datasets`。服务器 IP 变化时，应同步修改 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 并重新创建 API 和 worker 容器。
 
 ### 2. 准备持久化目录
 
@@ -419,7 +419,9 @@ ssh -N \
 PLATFORM_LABEL_STUDIO_API_TOKEN=<legacy-api-token>
 ```
 
-Token、数据库密码和 Session Secret 一旦出现在聊天、日志或工单中，应立即撤销并轮换。
+该 Token 不替代 Label Studio 网页登录。新的浏览器配置首次打开审核链接时仍需使用 Label Studio 账号登录，之后由浏览器 Cookie 保持会话。
+
+Token 和数据库密码一旦出现在聊天、日志或工单中，应立即撤销并轮换。
 
 ### 4. 启动完整服务
 
@@ -434,14 +436,7 @@ docker compose \
 docker compose ps -a
 ```
 
-首次部署创建平台管理员，命令会交互式要求输入两次不少于 8 位的密码：
-
-```bash
-docker compose exec api \
-  label-platform create-admin \
-  --email admin@example.com \
-  --name Administrator
-```
+平台没有管理员初始化步骤。数据库迁移完成后，所有内部使用者直接打开 Web 地址即可进入数据集页面。
 
 修改 `.env` 后，`docker compose restart` 不会刷新容器环境变量，必须重新创建相关服务：
 
@@ -650,7 +645,7 @@ PLATFORM_INTEGRATION_DATABASE_URL=postgresql+psycopg://platform:platform-dev-pas
 
 ## Production requirements
 
-必须替换 `POSTGRES_PASSWORD` 和 `PLATFORM_SESSION_SECRET`，启用 `PLATFORM_SECURE_COOKIES=true`，使用外部 TLS 反向代理，并按设计分别提供平台、Label Studio 与 UniTrain 内部主机名。来源目录保持只读，managed、Label Studio 导出和 UniTrain 运行目录分别持久化。不要将 `.env`、令牌或密码提交到 Git。
+必须替换 `POSTGRES_PASSWORD`，使用外部 TLS 反向代理，并按设计分别提供平台、Label Studio 与 UniTrain 内部主机名。来源目录保持只读，managed、Label Studio 导出和 UniTrain 运行目录分别持久化。不要将 `.env`、令牌或密码提交到 Git。
 
 ## Bundled UniTrain source
 

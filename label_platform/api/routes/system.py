@@ -1,17 +1,15 @@
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from label_platform.api.dependencies import SessionDependency, require_roles
-from label_platform.db.models import AuditEvent, User
-from label_platform.domain.enums import UserRole
+from label_platform.api.dependencies import SessionDependency
+from label_platform.db.models import AuditEvent
 
 
 router = APIRouter(prefix="/api/admin", tags=["administration"])
-AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
 
 
 class ConnectorStatus(BaseModel):
@@ -29,18 +27,15 @@ class SystemConfigResponse(BaseModel):
 class AuditEventResponse(BaseModel):
     id: str
     action: str
-    user_id: str | None
-    user_name: str
     resource_type: str
     resource_id: str
     resource_name: str
     timestamp: datetime
     details: dict[str, Any]
-    ip_address: str | None
 
 
 @router.get("/system-config", response_model=SystemConfigResponse)
-def get_system_config(request: Request, _: AdminUser) -> SystemConfigResponse:
+def get_system_config(request: Request) -> SystemConfigResponse:
     settings = request.app.state.settings
     return SystemConfigResponse(
         label_studio=ConnectorStatus(
@@ -61,7 +56,6 @@ def get_system_config(request: Request, _: AdminUser) -> SystemConfigResponse:
 @router.get("/audit-events")
 def list_audit_events(
     session: SessionDependency,
-    _: AdminUser,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> dict[str, object]:
@@ -82,12 +76,9 @@ def _audit_response(event: AuditEvent) -> AuditEventResponse:
     return AuditEventResponse(
         id=event.id,
         action=event.action,
-        user_id=event.actor_user_id,
-        user_name=event.actor.name if event.actor is not None else "System",
         resource_type=event.resource_type,
         resource_id=event.resource_id,
         resource_name=event.resource_id,
         timestamp=event.created_at,
         details=event.details,
-        ip_address=event.ip_address,
     )

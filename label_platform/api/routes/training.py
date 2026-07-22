@@ -1,18 +1,17 @@
 from datetime import datetime
 import re
-from typing import Annotated, Any, Literal, cast
+from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 
-from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
+from label_platform.api.dependencies import SessionDependency
 from label_platform.db.models import (
     BackgroundJob,
     TrainingRun,
-    User,
 )
-from label_platform.domain.enums import JobStatus, TaskType, TrainingStatus, UserRole
+from label_platform.domain.enums import JobStatus, TaskType, TrainingStatus
 from label_platform.integrations.unitrain import (
     UnitTrainConnector,
     UnitTrainConnectorError,
@@ -31,10 +30,6 @@ from label_platform.training.service import (
 router = APIRouter(prefix="/api/training-runs", tags=["training"])
 models_router = APIRouter(prefix="/api/models", tags=["models"])
 integration_router = APIRouter(prefix="/api/integrations/unitrain", tags=["integrations"])
-TrainingOperator = Annotated[
-    User,
-    Depends(require_roles(UserRole.ADMIN, UserRole.DATA_ENGINEER)),
-]
 
 
 class TrainingConfigRequest(BaseModel):
@@ -115,7 +110,6 @@ class TrainingResponse(BaseModel):
     external_detail_url: str | None
     export_profile: str
     error_summary: dict[str, Any]
-    created_by: str
     started_at: datetime | None
     completed_at: datetime | None
     created_at: datetime
@@ -157,7 +151,6 @@ class ModelResponse(BaseModel):
     evaluation_files: list[str]
     evaluation_links: list[dict[str, str]]
     created_at: datetime
-    created_by: str
 
 
 def _workflow(request: Request) -> TrainingWorkflow:
@@ -176,7 +169,6 @@ def create_training_run(
     payload: CreateTrainingRequest,
     request: Request,
     session: SessionDependency,
-    operator: TrainingOperator,
 ) -> TrainingResponse:
     config = payload.config.model_dump()
     try:
@@ -185,8 +177,7 @@ def create_training_run(
             dataset_version_id=payload.dataset_version_id,
             name=payload.name,
             config=config,
-            created_by_id=operator.id,
-            idempotency_key=f"{operator.id}:{payload.idempotency_key}",
+            idempotency_key=payload.idempotency_key,
         )
     except TrainingConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -208,7 +199,6 @@ def create_training_run(
             status=JobStatus.PENDING,
             stage="pending",
             result={"request": {"training_run_id": run.id}},
-            created_by_id=operator.id,
         )
         session.add(job)
         session.commit()
@@ -229,7 +219,6 @@ def create_training_run(
 @router.get("")
 def list_training_runs(
     session: SessionDependency,
-    _: CurrentUser,
     dataset_id: str | None = None,
     status_filter: TrainingStatus | None = Query(default=None, alias="status"),
     search: str | None = Query(default=None, max_length=200),
@@ -269,7 +258,6 @@ def list_training_runs(
 def get_training_run(
     run_id: str,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> TrainingResponse:
     return _response(_require_run(session, run_id), job_id=_latest_job_id(session, run_id))
 
@@ -279,7 +267,6 @@ def sync_training_run(
     run_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> TrainingResponse:
     _require_run(session, run_id)
     try:
@@ -297,7 +284,6 @@ def get_training_logs(
     run_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> TrainingLogsResponse:
@@ -322,7 +308,6 @@ def get_training_metrics(
     run_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> TrainingMetricsResponse:
     _require_run(session, run_id)
     try:
@@ -339,7 +324,6 @@ def stop_training_run(
     run_id: str,
     request: Request,
     session: SessionDependency,
-    _: TrainingOperator,
 ) -> TrainingResponse:
     _require_run(session, run_id)
     try:
@@ -356,7 +340,6 @@ def stop_training_run(
 def list_models(
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
     search: str | None = Query(default=None, max_length=200),
     task_type: TaskType | None = None,
     page: int = Query(default=1, ge=1),
@@ -385,7 +368,6 @@ def get_model(
     model_id: str,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> ModelResponse:
     connector = cast(UnitTrainConnector, request.app.state.unitrain_connector)
     try:
@@ -405,7 +387,6 @@ def get_model_artifact(
     artifact_index: int,
     request: Request,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> Response:
     connector = cast(UnitTrainConnector, request.app.state.unitrain_connector)
     try:
@@ -432,7 +413,7 @@ def get_model_artifact(
 
 
 @integration_router.get("/health")
-def unitrain_health(request: Request, _: CurrentUser) -> dict[str, str]:
+def unitrain_health(request: Request) -> dict[str, str]:
     connector = cast(UnitTrainConnector, request.app.state.unitrain_connector)
     try:
         return {"status": "online", "version": connector.health()}
@@ -458,7 +439,6 @@ def _response(run: TrainingRun, *, job_id: str | None) -> TrainingResponse:
         external_detail_url=run.external_detail_url,
         export_profile=run.export_profile,
         error_summary=run.error_summary,
-        created_by=run.created_by.name,
         started_at=run.started_at,
         completed_at=run.completed_at,
         created_at=run.created_at,
@@ -541,7 +521,6 @@ def _map_models(
                     for index, path in enumerate(model.evaluation_files)
                 ],
                 created_at=model.created_at,
-                created_by=run.created_by.name,
             )
         )
     return responses

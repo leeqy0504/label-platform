@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../../test/server';
 import type { Dataset } from '../../../types';
-import { AuthProvider } from '../../auth/AuthProvider';
 import { ReviewTab } from './ReviewTab';
 
 const dataset: Dataset = {
@@ -18,7 +17,6 @@ const dataset: Dataset = {
   status: 'reviewing',
   updatedAt: '2026-07-21T06:00:00Z',
   createdAt: '2026-07-21T05:00:00Z',
-  createdBy: 'Dataset Engineer',
   rootPath: '',
   categories: [],
   versions: [{
@@ -30,7 +28,6 @@ const dataset: Dataset = {
     annotationCount: 80,
     categorySchema: [],
     createdAt: '2026-07-21T05:00:00Z',
-    createdBy: 'Dataset Engineer',
     reviewSessionId: null,
     trainingCount: 0,
     isImmutable: true,
@@ -62,7 +59,6 @@ const review = {
   status: 'in_review',
   config_hash: 'a'.repeat(64),
   error_summary: {},
-  created_by: 'Dataset Engineer',
   started_at: '2026-07-21T06:00:00Z',
   completed_at: null,
   created_at: '2026-07-21T06:00:00Z',
@@ -73,10 +69,6 @@ const review = {
 it('deletes an active review after destructive confirmation', async () => {
   let deleted = false;
   server.use(
-    http.get('/api/auth/me', () => HttpResponse.json({
-      id: 'user-1', email: 'engineer@example.test', name: 'Dataset Engineer',
-      role: 'data_engineer', is_active: true,
-    })),
     http.get('/api/integrations/label-studio/health', () => (
       HttpResponse.json({ status: 'online', version: '1.21.0' })
     )),
@@ -91,11 +83,7 @@ it('deletes an active review after destructive confirmation', async () => {
     }),
   );
   const user = userEvent.setup();
-  render(
-    <AuthProvider>
-      <ReviewTab dataset={dataset} />
-    </AuthProvider>,
-  );
+  render(<ReviewTab dataset={dataset} />);
 
   const deleteButton = await screen.findByRole('button', { name: '删除审核任务' });
   const labelStudioLink = screen.getByRole('link', { name: '在 Label Studio 中打开' });

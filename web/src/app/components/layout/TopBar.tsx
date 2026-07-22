@@ -1,21 +1,6 @@
 import { useLocation } from 'react-router';
-import { ChevronRight, User, Loader2, LogOut } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
+import { ChevronRight, Loader2 } from 'lucide-react';
 import { useBackgroundTasks } from '../../hooks/useBackgroundTasks';
-import { useAuth } from '../../auth/AuthProvider';
-
-const roleNames = {
-  admin: '管理员',
-  data_engineer: '数据工程师',
-  reviewer: '审核员',
-};
 
 const breadcrumbMap: Record<string, string> = {
   datasets: '数据集',
@@ -45,7 +30,6 @@ export function TopBar() {
   const location = useLocation();
   const breadcrumbs = getBreadcrumbs(location.pathname);
   const { tasks } = useBackgroundTasks();
-  const { user, logout } = useAuth();
   const activeTasks = tasks.filter(t => t.status === 'running');
 
   return (
@@ -75,28 +59,6 @@ export function TopBar() {
           <span>{activeTasks.length} 个后台任务</span>
         </div>
       )}
-
-      {/* User menu */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 transition-colors">
-            <div className="size-6 rounded-full bg-blue-600 flex items-center justify-center">
-              <User className="size-3.5 text-white" />
-            </div>
-            <span className="hidden sm:block text-sm text-gray-700 max-w-32 truncate">{user?.name}</span>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuLabel>
-            <div className="text-xs text-gray-500">{user ? roleNames[user.role] : ''}</div>
-            <div className="text-sm truncate">{user?.email}</div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem className="text-red-600" onClick={() => void logout()}>
-            <LogOut className="size-3.5 mr-2" />退出登录
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </header>
   );
 }

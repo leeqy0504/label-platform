@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
 import json
 
-from sqlalchemy import select
-
-from label_platform.db.models import Dataset, DatasetVersion, TrainingRun, User
+from label_platform.db.models import Dataset, DatasetVersion, TrainingRun
 from label_platform.domain.enums import TrainingStatus, VersionStatus
 from label_platform.integrations.unitrain import (
     UnitTrainArtifact,
@@ -117,14 +115,11 @@ class FakeUnitTrainConnector:
 def prepare_ready_version(api_context):
     settings, session_factory = api_context
     with session_factory() as session, session.begin():
-        user = session.scalar(select(User).where(User.email == "engineer@example.test"))
-        assert user is not None
         dataset = Dataset(
             id="dataset-training-api",
             name="training-api",
             description="",
             status="trainable",
-            created_by_id=user.id,
         )
         version = DatasetVersion(
             id="version-training-api",
@@ -136,7 +131,6 @@ def prepare_ready_version(api_context):
             class_schema=[{"id": 1, "name": "cargo"}],
             item_count=1,
             status=VersionStatus.READY,
-            created_by_id=user.id,
         )
         session.add(version)
     root = settings.managed_data_root / "dataset-training-api/versions/v2"
@@ -173,7 +167,7 @@ def prepare_ready_version(api_context):
 
 
 def test_training_api_submits_ready_version_and_proxies_outputs(
-    authenticated_client,
+    client,
     api_context,
 ):
     settings, session_factory = api_context
@@ -192,8 +186,8 @@ def test_training_api_submits_ready_version_and_proxies_outputs(
         training_workflow=workflow,
     )
     queue = InlineJobQueue(training_submission_handler=runner.run_training_submission)
-    authenticated_client.app.state.unitrain_connector = connector
-    authenticated_client.app.state.job_queue = queue
+    client.app.state.unitrain_connector = connector
+    client.app.state.job_queue = queue
 
     payload = {
         "name": "warehouse-baseline",
@@ -202,8 +196,8 @@ def test_training_api_submits_ready_version_and_proxies_outputs(
         "idempotency_key": "training-api-1",
         "config": {"framework": "ultralytics", "model": "yolo11n", "epochs": 10},
     }
-    created = authenticated_client.post("/api/training-runs", json=payload)
-    repeated = authenticated_client.post("/api/training-runs", json=payload)
+    created = client.post("/api/training-runs", json=payload)
+    repeated = client.post("/api/training-runs", json=payload)
 
     assert created.status_code == repeated.status_code == 202
     assert created.json()["id"] == repeated.json()["id"]
@@ -213,15 +207,15 @@ def test_training_api_submits_ready_version_and_proxies_outputs(
     assert queue.training_submission_enqueued_count == 1
     run_id = created.json()["id"]
 
-    listing = authenticated_client.get("/api/training-runs")
-    synced = authenticated_client.post(f"/api/training-runs/{run_id}/sync")
-    logs = authenticated_client.get(f"/api/training-runs/{run_id}/logs")
-    metrics = authenticated_client.get(f"/api/training-runs/{run_id}/metrics")
-    models = authenticated_client.get("/api/models")
-    model = authenticated_client.get("/api/models/model-1")
-    artifact = authenticated_client.get("/api/models/model-1/artifacts/0")
-    health = authenticated_client.get("/api/integrations/unitrain/health")
-    stopped = authenticated_client.post(f"/api/training-runs/{run_id}/stop")
+    listing = client.get("/api/training-runs")
+    synced = client.post(f"/api/training-runs/{run_id}/sync")
+    logs = client.get(f"/api/training-runs/{run_id}/logs")
+    metrics = client.get(f"/api/training-runs/{run_id}/metrics")
+    models = client.get("/api/models")
+    model = client.get("/api/models/model-1")
+    artifact = client.get("/api/models/model-1/artifacts/0")
+    health = client.get("/api/integrations/unitrain/health")
+    stopped = client.post(f"/api/training-runs/{run_id}/stop")
 
     assert listing.json()["meta"]["total"] == 1
     assert synced.json()["metric_summary"]["mAP50"] == 0.82

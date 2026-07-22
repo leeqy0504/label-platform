@@ -1,28 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Wifi, WifiOff, Loader2, Plus, Power, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Wifi, WifiOff, Loader2, Plus, Power, RefreshCw } from 'lucide-react';
 import {
   checkLabelStudioConnection,
   checkUnitTrainConnection,
   createAllowedRoot,
-  createUser,
   getSystemConfig,
   listAuditLogs,
-  listUsers,
   updateAllowedRoot,
-  updateUser,
 } from '../../services/api';
-import type { User, SystemConfig, AuditLog } from '../../types';
+import type { SystemConfig, AuditLog } from '../../types';
 import { PageLoading } from '../components/shared/EmptyState';
 import { Pagination } from '../components/shared/Pagination';
 import { cn } from '../components/ui/utils';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-
-const ROLE_LABEL: Record<string, string> = {
-  admin: '管理员',
-  data_engineer: '数据工程师',
-  reviewer: '审核员',
-};
 
 const RESOURCE_TYPE_LABEL: Record<string, string> = {
   dataset: '数据集',
@@ -47,11 +37,10 @@ function ConnectionStatus({ status }: { status: string }) {
   );
 }
 
-const TABS = ['用户管理', '访问目录', '服务连接', '审计日志'];
+const TABS = ['访问目录', '服务连接', '审计日志'];
 
 export default function SystemPage() {
   const [activeTab, setActiveTab] = useState(0);
-  const [users, setUsers] = useState<User[]>([]);
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
@@ -61,20 +50,15 @@ export default function SystemPage() {
   const [utStatus, setUtStatus] = useState<string>('online');
   const [lsChecking, setLsChecking] = useState(false);
   const [utChecking, setUtChecking] = useState(false);
-  const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [rootDialogOpen, setRootDialogOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [userForm, setUserForm] = useState({
-    name: '', email: '', password: '', role: 'data_engineer' as User['role'],
-  });
   const [rootForm, setRootForm] = useState({ path: '', label: '', description: '' });
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([listUsers(), getSystemConfig()])
-      .then(([u, c]) => {
-        setUsers(u);
+    getSystemConfig()
+      .then(c => {
         setConfig(c);
         setLsStatus(c.labelStudio.status);
         setUtStatus(c.unitTrain.status);
@@ -140,31 +124,6 @@ export default function SystemPage() {
     }
   };
 
-  const submitUser = async () => {
-    setActionLoading(true);
-    setActionError(null);
-    try {
-      await createUser(userForm);
-      setUsers(await listUsers());
-      setUserDialogOpen(false);
-      setUserForm({ name: '', email: '', password: '', role: 'data_engineer' });
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : '添加用户失败');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const toggleUser = async (user: User) => {
-    setActionError(null);
-    try {
-      await updateUser(user.id, { is_active: !user.isActive });
-      setUsers(await listUsers());
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : '更新用户失败');
-    }
-  };
-
   const submitRoot = async () => {
     setActionLoading(true);
     setActionError(null);
@@ -224,65 +183,8 @@ export default function SystemPage() {
             {actionError}
           </div>
         )}
-        {/* Users */}
-        {activeTab === 0 && (
-          <div className="max-w-3xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-700">用户列表</h3>
-              <button onClick={() => setUserDialogOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
-                <Plus className="size-3.5" />添加用户
-              </button>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">用户</th>
-                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">角色</th>
-                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">状态</th>
-                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">最后登录</th>
-                    <th className="w-8" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map(user => (
-                    <tr key={user.id} className="border-b border-gray-100">
-                      <td className="px-4 py-2.5">
-                        <div className="text-sm text-gray-800">{user.name}</div>
-                        <div className="text-xs text-gray-500">{user.email}</div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          'text-xs px-1.5 py-0.5 rounded border',
-                          user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                          user.role === 'data_engineer' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          'bg-gray-100 text-gray-600 border-gray-200'
-                        )}>
-                          {ROLE_LABEL[user.role]}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        {user.isActive
-                          ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="size-3.5" />活跃</span>
-                          : <span className="flex items-center gap-1 text-xs text-gray-400"><XCircle className="size-3.5" />停用</span>
-                        }
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-500">{formatDate(user.lastLogin)}</td>
-                      <td className="px-3 py-2.5">
-                        <button onClick={() => toggleUser(user)} className="size-6 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title={user.isActive ? '停用用户' : '启用用户'}>
-                          <Power className="size-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
         {/* Allowed Roots */}
-        {activeTab === 1 && (
+        {activeTab === 0 && (
           <div className="max-w-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-gray-700">允许访问的服务器根目录</h3>
@@ -314,7 +216,7 @@ export default function SystemPage() {
         )}
 
         {/* Service Connections */}
-        {activeTab === 2 && (
+        {activeTab === 1 && (
           <div className="max-w-2xl space-y-4">
             {/* Label Studio */}
             <div className="bg-white border border-gray-200 rounded-lg p-5">
@@ -383,7 +285,7 @@ export default function SystemPage() {
         )}
 
         {/* Audit Log */}
-        {activeTab === 3 && (
+        {activeTab === 2 && (
           <div className="max-w-4xl space-y-4">
             <h3 className="text-sm font-medium text-gray-700">审计日志</h3>
             <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
@@ -391,7 +293,6 @@ export default function SystemPage() {
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
                     <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">操作</th>
-                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-24">操作人</th>
                     <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-16">资源类型</th>
                     <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">资源名称</th>
                     <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-32">时间</th>
@@ -404,7 +305,6 @@ export default function SystemPage() {
                         <div className="text-xs font-medium text-gray-800">{log.action}</div>
                         <div className="text-xs text-gray-500 mt-0.5">{log.details}</div>
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600">{log.userName}</td>
                       <td className="px-3 py-2.5">
                         <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
                           {RESOURCE_TYPE_LABEL[log.resourceType] ?? log.resourceType}
@@ -423,29 +323,6 @@ export default function SystemPage() {
           </div>
         )}
       </div>
-
-      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>添加用户</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2">
-            <input value={userForm.name} onChange={event => setUserForm(form => ({ ...form, name: event.target.value }))} placeholder="姓名" className="w-full h-9 px-3 text-sm border border-gray-200 rounded" />
-            <input value={userForm.email} onChange={event => setUserForm(form => ({ ...form, email: event.target.value }))} type="email" placeholder="邮箱" className="w-full h-9 px-3 text-sm border border-gray-200 rounded" />
-            <input value={userForm.password} onChange={event => setUserForm(form => ({ ...form, password: event.target.value }))} type="password" placeholder="初始密码（至少 8 位）" className="w-full h-9 px-3 text-sm border border-gray-200 rounded" />
-            <Select value={userForm.role} onValueChange={role => setUserForm(form => ({ ...form, role: role as User['role'] }))}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="admin">管理员</SelectItem>
-                <SelectItem value="data_engineer">数据工程师</SelectItem>
-                <SelectItem value="reviewer">审核员</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <button onClick={() => setUserDialogOpen(false)} className="px-3 py-1.5 text-sm text-gray-600">取消</button>
-            <button onClick={submitUser} disabled={actionLoading || !userForm.name || !userForm.email || userForm.password.length < 8} className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded disabled:opacity-40">添加</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={rootDialogOpen} onOpenChange={setRootDialogOpen}>
         <DialogContent className="max-w-md">

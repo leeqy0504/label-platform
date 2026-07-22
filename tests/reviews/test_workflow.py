@@ -122,18 +122,15 @@ class FakeUnitTrainConnector:
 
 def test_review_creation_is_resumable_and_export_publishes_one_child(
     api_context,
-    user_factory,
     image_factory,
     tmp_path,
 ):
     settings, session_factory = api_context
-    creator = user_factory(email="review-engineer@example.test", password="correct-horse")
     with session_factory() as session, session.begin():
         dataset = Dataset(
             id="dataset-1",
             name="warehouse",
             description="cargo",
-            created_by_id=creator.id,
         )
         session.add(dataset)
     source = tmp_path / "source"
@@ -147,7 +144,6 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
             source_path=source,
             categories=("cargo",),
             task_type=TaskType.DETECTION,
-            created_by_id=creator.id,
             split_ratios={"train": 1.0, "val": 0.0, "test": 0.0},
         )
     )
@@ -164,13 +160,11 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
     review = workflow.create_session(
         dataset_id="dataset-1",
         input_version_id=version.id,
-        created_by_id=creator.id,
         idempotency_key="review-request-1",
     )
     repeated = workflow.create_session(
         dataset_id="dataset-1",
         input_version_id=version.id,
-        created_by_id=creator.id,
         idempotency_key="review-request-1",
     )
     workflow.run_creation(review.id)
@@ -227,7 +221,6 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
             "epochs": 2,
             "batch_size": 1,
         },
-        created_by_id=creator.id,
         idempotency_key="training-after-review",
     )
     submitted = training.submit(run.id)

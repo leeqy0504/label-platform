@@ -7,7 +7,6 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { EmptyState, PageLoading } from '../shared/EmptyState';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { useAuth } from '../../auth/AuthProvider';
 
 function formatDuration(seconds: number): string {
   if (seconds === 0) return '—';
@@ -139,8 +138,6 @@ function CreateTrainingDialog({
 }
 
 export function DatasetTrainingTab({ dataset }: { dataset: Dataset }) {
-  const { user } = useAuth();
-  const canOperate = user?.role === 'admin' || user?.role === 'data_engineer';
   const navigate = useNavigate();
   const [runs, setRuns] = useState<TrainingRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -178,7 +175,6 @@ export function DatasetTrainingTab({ dataset }: { dataset: Dataset }) {
   }, [load, checkService]);
 
   const canTrain = serviceStatus === 'online'
-    && canOperate
     && dataset.status === 'trainable'
     && dataset.versions.some(v => v.isImmutable);
 

@@ -1,20 +1,16 @@
 from datetime import datetime
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
 
-from label_platform.api.dependencies import CurrentUser, SessionDependency, require_roles
-from label_platform.db.models import AuditEvent, BackgroundJob, TrainingRun, User
-from label_platform.domain.enums import JobStatus, TrainingStatus, UserRole
+from label_platform.api.dependencies import SessionDependency
+from label_platform.db.models import AuditEvent, BackgroundJob, TrainingRun
+from label_platform.domain.enums import JobStatus, TrainingStatus
 from label_platform.jobs.queue import JobQueue
 
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
-JobOperator = Annotated[
-    User,
-    Depends(require_roles(UserRole.ADMIN, UserRole.DATA_ENGINEER)),
-]
 
 
 class JobResponse(BaseModel):
@@ -60,7 +56,6 @@ def _job_response(job: BackgroundJob) -> JobResponse:
 def get_job(
     job_id: str,
     session: SessionDependency,
-    _: CurrentUser,
 ) -> JobResponse:
     job = session.get(BackgroundJob, job_id)
     if job is None:
@@ -73,7 +68,6 @@ def retry_job(
     job_id: str,
     request: Request,
     session: SessionDependency,
-    operator: JobOperator,
 ) -> JobResponse:
     job = session.get(BackgroundJob, job_id)
     if job is None:
@@ -112,12 +106,10 @@ def retry_job(
     job.retry_count += 1
     session.add(
         AuditEvent(
-            actor_user_id=operator.id,
             action="background_job.retried",
             resource_type="background_job",
             resource_id=job.id,
             details={"retry_count": job.retry_count},
-            ip_address=request.client.host if request.client else None,
         )
     )
     session.commit()

@@ -1,10 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 
-from label_platform.api.dependencies import require_roles
-from label_platform.api.routes.auth import router as auth_router
 from label_platform.api.routes.datasets import router as datasets_router
 from label_platform.api.routes.jobs import router as jobs_router
 from label_platform.api.routes.roots import router as roots_router
@@ -15,10 +13,8 @@ from label_platform.api.routes.training import (
     models_router,
     router as training_router,
 )
-from label_platform.api.routes.users import router as users_router
 from label_platform.config import Settings
 from label_platform.db.session import create_engine_from_settings, create_session_factory
-from label_platform.domain.enums import UserRole
 from label_platform.jobs.queue import RQJobQueue
 from label_platform.integrations.labelstudio import create_label_studio_connector
 from label_platform.integrations.unitrain import create_unitrain_connector
@@ -48,7 +44,6 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.job_queue = RQJobQueue(settings.redis_url)
     app.state.label_studio_connector = label_studio_connector
     app.state.unitrain_connector = unitrain_connector
-    app.include_router(auth_router)
     app.include_router(datasets_router)
     app.include_router(jobs_router)
     app.include_router(roots_router)
@@ -58,13 +53,6 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(models_router)
     app.include_router(unitrain_integration_router)
     app.include_router(system_router)
-    app.include_router(users_router)
-
-    if settings.environment == "test":
-
-        @app.get("/api/auth/admin-probe")
-        def admin_probe(_: object = Depends(require_roles(UserRole.ADMIN))) -> dict[str, bool]:
-            return {"admin": True}
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

@@ -8,22 +8,15 @@ from label_platform.jobs.queue import InlineJobQueue
 from label_platform.jobs.tasks import JobRunner
 
 
-def login(client, email, password):
-    response = client.post("/api/auth/login", json={"email": email, "password": password})
-    assert response.status_code == 200
-
-
 @pytest.fixture
-def dataset_api(client, api_context, user_factory, tmp_path):
+def dataset_api(client, api_context, tmp_path):
     settings, session_factory = api_context
-    engineer = user_factory(email="engineer@example.test", password="engineer-password")
     source_root = tmp_path / "sources"
     source_root.mkdir()
     with session_factory() as session:
         root = AllowedRoot(
             path=str(source_root.resolve()),
             label="Sources",
-            created_by_id=engineer.id,
         )
         session.add(root)
         session.commit()
@@ -35,8 +28,7 @@ def dataset_api(client, api_context, user_factory, tmp_path):
         registration_handler=runner.run_registration,
     )
     client.app.state.job_queue = queue
-    login(client, engineer.email, "engineer-password")
-    return client, session_factory, queue, engineer, root_id, source_root, settings.managed_data_root
+    return client, session_factory, queue, None, root_id, source_root, settings.managed_data_root
 
 
 def analysis_payload(root_id, *, key="analysis-1"):
@@ -288,35 +280,3 @@ def test_archive_is_audited_and_does_not_delete_managed_files(
             )
         )
         assert event is not None
-
-
-def test_reviewer_cannot_analyze_register_or_archive(
-    client,
-    api_context,
-    user_factory,
-    tmp_path,
-):
-    _, session_factory = api_context
-    reviewer = user_factory(
-        email="reviewer@example.test",
-        password="reviewer-password",
-        role="reviewer",
-    )
-    source = tmp_path / "sources"
-    source.mkdir()
-    with session_factory() as session:
-        root = AllowedRoot(path=str(source), label="Sources", created_by_id=reviewer.id)
-        session.add(root)
-        session.commit()
-        root_id = root.id
-    login(client, reviewer.email, "reviewer-password")
-
-    assert client.post("/api/datasets/analyze", json=analysis_payload(root_id)).status_code == 403
-    assert (
-        client.post(
-            "/api/datasets/register",
-            json=registration_payload(root_id, "fingerprint"),
-        ).status_code
-        == 403
-    )
-    assert client.post("/api/datasets/missing/archive").status_code == 403

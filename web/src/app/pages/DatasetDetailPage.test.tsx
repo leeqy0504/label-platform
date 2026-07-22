@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../test/server';
-import { AuthProvider } from '../auth/AuthProvider';
 import DatasetDetailPage from './DatasetDetailPage';
 
 function datasetHandlers() {
@@ -15,7 +14,6 @@ function datasetHandlers() {
       status: 'trainable',
       created_at: '2026-07-16T00:00:00Z',
       updated_at: '2026-07-16T01:00:00Z',
-      created_by: 'Dataset Engineer',
       current_version: 2,
       current_version_id: 'version-2',
       item_count: 10,
@@ -36,14 +34,14 @@ function datasetHandlers() {
           id: 'version-2', version_number: 2, parent_id: 'version-1', status: 'ready',
           class_schema: [{ id: 1, name: 'cargo' }, { id: 2, name: 'person' }],
           category_counts: { 1: 12, 2: 5 }, item_count: 10, annotation_count: 17,
-          validation_result: { valid: true, errors: [] }, created_by: 'Dataset Engineer',
+          validation_result: { valid: true, errors: [] },
           created_at: '2026-07-16T01:00:00Z',
         },
         {
           id: 'version-1', version_number: 1, parent_id: null, status: 'ready',
           class_schema: [{ id: 1, name: 'cargo' }, { id: 2, name: 'person' }],
           category_counts: { 1: 8, 2: 3 }, item_count: 10, annotation_count: 11,
-          validation_result: { valid: true, errors: [] }, created_by: 'Dataset Engineer',
+          validation_result: { valid: true, errors: [] },
           created_at: '2026-07-16T00:00:00Z',
         },
       ],
@@ -60,13 +58,11 @@ it('renders real dataset metadata and an explicit unavailable review state', asy
   datasetHandlers();
   const user = userEvent.setup();
   render(
-    <AuthProvider>
-      <MemoryRouter initialEntries={['/datasets/dataset-1']}>
-        <Routes>
-          <Route path="/datasets/:id" element={<DatasetDetailPage />} />
-        </Routes>
-      </MemoryRouter>
-    </AuthProvider>,
+    <MemoryRouter initialEntries={['/datasets/dataset-1']}>
+      <Routes>
+        <Route path="/datasets/:id" element={<DatasetDetailPage />} />
+      </Routes>
+    </MemoryRouter>,
   );
 
   expect(await screen.findByText('17')).toBeInTheDocument();

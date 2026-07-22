@@ -15,7 +15,6 @@ export type ReviewStatus =
   | 'exporting'
   | 'completed'
   | 'failed';
-export type UserRole = 'admin' | 'data_engineer' | 'reviewer';
 export type TaskType = 'detection' | 'instance_segmentation';
 export type SourceFormat = 'image_directory' | 'coco_detection' | 'coco_instance' | 'label_studio';
 export type SplitType = 'train' | 'val' | 'test';
@@ -39,7 +38,6 @@ export interface DatasetVersion {
   annotationCount: number;
   categorySchema: Category[];
   createdAt: string;
-  createdBy: string;
   reviewSessionId: string | null;
   trainingCount: number;
   isImmutable: boolean;
@@ -76,7 +74,6 @@ export interface Dataset {
   status: DatasetStatus;
   updatedAt: string;
   createdAt: string;
-  createdBy: string;
   rootPath: string;
   categories: Category[];
   versions: DatasetVersion[];
@@ -105,7 +102,6 @@ export interface ReviewSession {
   completedTasks: number;
   skippedTasks: number;
   status: ReviewStatus;
-  createdBy: string;
   startedAt: string | null;
   completedAt: string | null;
   outputVersion: string | null;
@@ -156,7 +152,6 @@ export interface TrainingRun {
   primaryMetric: number;
   secondaryMetric: number;
   metricName: string;
-  startedBy: string;
   startedAt: string;
   completedAt: string | null;
   durationSeconds: number;
@@ -193,20 +188,9 @@ export interface Model {
   fileSize: number;
   filePath: string;
   createdAt: string;
-  createdBy: string;
   categories: string[];
   categoryAP: CategoryAP[];
   evaluationFiles: Array<{ name: string; url: string }>;
-}
-
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  createdAt: string;
-  lastLogin: string;
-  isActive: boolean;
 }
 
 export interface AllowedRoot {
@@ -220,14 +204,11 @@ export interface AllowedRoot {
 export interface AuditLog {
   id: string;
   action: string;
-  userId: string;
-  userName: string;
   resourceType: string;
   resourceId: string;
   resourceName: string;
   timestamp: string;
   details: string;
-  ipAddress: string;
 }
 
 export interface SystemConfig {

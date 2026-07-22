@@ -1,12 +1,6 @@
 from enum import StrEnum
 
 
-class UserRole(StrEnum):
-    ADMIN = "admin"
-    DATA_ENGINEER = "data_engineer"
-    REVIEWER = "reviewer"
-
-
 class SourceFormat(StrEnum):
     IMAGE_DIRECTORY = "image_directory"
     COCO_DETECTION = "coco_detection"

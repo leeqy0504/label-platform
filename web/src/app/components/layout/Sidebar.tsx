@@ -9,7 +9,6 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '../ui/utils';
-import { useAuth } from '../../auth/AuthProvider';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -26,8 +25,6 @@ const navItems = [
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
-  const { user } = useAuth();
-  const visibleItems = navItems.filter(item => item.to !== '/admin' || user?.role === 'admin');
 
   return (
     <aside
@@ -48,7 +45,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 py-2 overflow-y-auto">
-        {visibleItems.map(({ to, icon: Icon, label }) => {
+        {navItems.map(({ to, icon: Icon, label }) => {
           const isActive = location.pathname.startsWith(to);
           return (
             <NavLink

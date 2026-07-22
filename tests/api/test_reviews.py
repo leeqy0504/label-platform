@@ -2,7 +2,7 @@ import json
 
 from sqlalchemy import select
 
-from label_platform.db.models import AuditEvent, BackgroundJob, Dataset, DatasetVersion, ReviewSession, User
+from label_platform.db.models import AuditEvent, BackgroundJob, Dataset, DatasetVersion, ReviewSession
 from label_platform.domain.enums import JobStatus, ReviewStatus, VersionStatus
 from label_platform.jobs.queue import InlineJobQueue
 
@@ -19,21 +19,18 @@ class HealthOnlyConnector:
 
 
 def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
-    authenticated_client,
+    client,
     api_context,
 ):
     settings, session_factory = api_context
     settings.label_studio_url = "http://label-studio:8080"
     settings.label_studio_public_url = "https://labels.example.test"
     with session_factory() as session, session.begin():
-        user = session.scalar(select(User).where(User.email == "engineer@example.test"))
-        assert user is not None
         dataset = Dataset(
             id="dataset-review-api",
             name="review-api",
             description="",
             status="trainable",
-            created_by_id=user.id,
         )
         version = DatasetVersion(
             id="version-review-api",
@@ -45,7 +42,6 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
             class_schema=[{"id": 1, "name": "cargo"}],
             item_count=1,
             status=VersionStatus.READY,
-            created_by_id=user.id,
         )
         session.add(version)
     version_root = settings.managed_data_root / "dataset-review-api/versions/v1"
@@ -55,10 +51,10 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
         encoding="utf-8",
     )
     queue = InlineJobQueue()
-    authenticated_client.app.state.job_queue = queue
-    authenticated_client.app.state.label_studio_connector = HealthOnlyConnector()
+    client.app.state.job_queue = queue
+    client.app.state.label_studio_connector = HealthOnlyConnector()
 
-    created = authenticated_client.post(
+    created = client.post(
         "/api/reviews",
         json={
             "dataset_id": "dataset-review-api",
@@ -80,9 +76,9 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
         review.label_studio_project_id = 17
         review.total_tasks = 1
 
-    detail = authenticated_client.get(f"/api/reviews/{review_id}")
-    health = authenticated_client.get("/api/integrations/label-studio/health")
-    completed = authenticated_client.post(f"/api/reviews/{review_id}/complete")
+    detail = client.get(f"/api/reviews/{review_id}")
+    health = client.get("/api/integrations/label-studio/health")
+    completed = client.post(f"/api/reviews/{review_id}/complete")
 
     assert detail.status_code == 200
     assert detail.json()["label_studio_project_url"] == (
@@ -95,21 +91,18 @@ def test_review_api_queues_creation_exposes_deep_link_and_queues_export(
 
 
 def test_review_api_deletes_active_session_and_label_studio_project(
-    authenticated_client,
+    client,
     api_context,
 ):
     _, session_factory = api_context
     connector = HealthOnlyConnector()
-    authenticated_client.app.state.label_studio_connector = connector
+    client.app.state.label_studio_connector = connector
     with session_factory() as session, session.begin():
-        user = session.scalar(select(User).where(User.email == "engineer@example.test"))
-        assert user is not None
         dataset = Dataset(
             id="dataset-review-delete",
             name="review-delete",
             description="",
             status="reviewing",
-            created_by_id=user.id,
         )
         version = DatasetVersion(
             id="version-review-delete",
@@ -121,7 +114,6 @@ def test_review_api_deletes_active_session_and_label_studio_project(
             class_schema=[],
             annotation_count=1,
             status=VersionStatus.READY,
-            created_by_id=user.id,
         )
         review = ReviewSession(
             id="review-delete",
@@ -133,7 +125,6 @@ def test_review_api_deletes_active_session_and_label_studio_project(
             status=ReviewStatus.IN_REVIEW,
             recoverable_status=ReviewStatus.IN_REVIEW,
             config_hash="a" * 64,
-            created_by_id=user.id,
         )
         session.add(review)
         session.add(
@@ -143,11 +134,10 @@ def test_review_api_deletes_active_session_and_label_studio_project(
                 job_type="review_creation",
                 idempotency_key="review-creation:review-delete",
                 status=JobStatus.SUCCEEDED,
-                created_by_id=user.id,
             )
         )
 
-    response = authenticated_client.delete("/api/reviews/review-delete")
+    response = client.delete("/api/reviews/review-delete")
 
     assert response.status_code == 204
     assert connector.deleted_projects == [17]
@@ -168,21 +158,18 @@ def test_review_api_deletes_active_session_and_label_studio_project(
 
 
 def test_review_api_rejects_deleting_completed_session(
-    authenticated_client,
+    client,
     api_context,
 ):
     _, session_factory = api_context
     connector = HealthOnlyConnector()
-    authenticated_client.app.state.label_studio_connector = connector
+    client.app.state.label_studio_connector = connector
     with session_factory() as session, session.begin():
-        user = session.scalar(select(User).where(User.email == "engineer@example.test"))
-        assert user is not None
         dataset = Dataset(
             id="dataset-review-completed",
             name="review-completed",
             description="",
             status="trainable",
-            created_by_id=user.id,
         )
         version = DatasetVersion(
             id="version-review-completed",
@@ -191,7 +178,6 @@ def test_review_api_rejects_deleting_completed_session(
             root_path="dataset-review-completed/versions/v1",
             class_schema=[],
             status=VersionStatus.READY,
-            created_by_id=user.id,
         )
         session.add(
             ReviewSession(
@@ -203,11 +189,10 @@ def test_review_api_rejects_deleting_completed_session(
                 idempotency_key="review-completed-key",
                 status=ReviewStatus.COMPLETED,
                 config_hash="b" * 64,
-                created_by_id=user.id,
             )
         )
 
-    response = authenticated_client.delete("/api/reviews/review-completed")
+    response = client.delete("/api/reviews/review-completed")
 
     assert response.status_code == 409
     assert connector.deleted_projects == []

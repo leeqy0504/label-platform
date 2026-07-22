@@ -51,7 +51,6 @@ class TrainingWorkflow:
         dataset_version_id: str,
         name: str,
         config: dict[str, Any],
-        created_by_id: str,
         idempotency_key: str,
     ) -> TrainingRun:
         with self.session_factory() as session, session.begin():
@@ -64,7 +63,6 @@ class TrainingWorkflow:
                     or existing.dataset_version_id != dataset_version_id
                     or existing.name != name
                     or existing.config != config
-                    or existing.created_by_id != created_by_id
                 ):
                     raise TrainingConflictError(
                         "Training idempotency key was used for a different request"
@@ -96,13 +94,11 @@ class TrainingWorkflow:
                 config=config,
                 status=TrainingStatus.QUEUED,
                 total_epochs=int(config["epochs"]),
-                created_by_id=created_by_id,
             )
             session.add(run)
             session.flush()
             session.add(
                 AuditEvent(
-                    actor_user_id=created_by_id,
                     action="training.submission_requested",
                     resource_type="training",
                     resource_id=run.id,
@@ -274,7 +270,6 @@ class TrainingWorkflow:
             if audit_action is not None:
                 session.add(
                     AuditEvent(
-                        actor_user_id=run.created_by_id,
                         action=audit_action,
                         resource_type="training",
                         resource_id=run.id,

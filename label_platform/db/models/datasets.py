@@ -5,7 +5,7 @@ from sqlalchemy import BigInteger, Float, ForeignKey, Integer, JSON, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from label_platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from label_platform.db.models.accounts import AllowedRoot, User
+from label_platform.db.models.accounts import AllowedRoot
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
 
@@ -15,9 +15,6 @@ class Dataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), unique=True, index=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
-
-    created_by: Mapped[User] = relationship()
     sources: Mapped[list["DatasetSource"]] = relationship(
         back_populates="dataset",
         cascade="all, delete-orphan",
@@ -86,8 +83,6 @@ class DatasetVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     validation_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    created_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
-
     dataset: Mapped[Dataset] = relationship(
         back_populates="versions",
         foreign_keys=[dataset_id],
@@ -96,7 +91,6 @@ class DatasetVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         remote_side="DatasetVersion.id",
         foreign_keys=[parent_id],
     )
-    created_by: Mapped[User | None] = relationship()
     items: Mapped[list["DatasetItem"]] = relationship(
         back_populates="version",
         cascade="all, delete-orphan",

@@ -26,29 +26,13 @@ def timestamp_columns() -> list[sa.Column]:
 
 def upgrade() -> None:
     op.create_table(
-        "users",
-        sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("email", sa.String(length=320), nullable=False),
-        sa.Column("name", sa.String(length=200), nullable=False),
-        sa.Column("password_hash", sa.String(length=512), nullable=False),
-        sa.Column("role", sa.String(length=32), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
-        *timestamp_columns(),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_users_email", "users", ["email"], unique=True)
-
-    op.create_table(
         "allowed_roots",
         sa.Column("id", sa.String(length=36), nullable=False),
         sa.Column("path", sa.Text(), nullable=False),
         sa.Column("label", sa.String(length=200), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=36), nullable=False),
         *timestamp_columns(),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("path"),
     )
@@ -59,9 +43,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("created_by_id", sa.String(length=36), nullable=False),
         *timestamp_columns(),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_datasets_name", "datasets", ["name"], unique=True)
@@ -97,9 +79,7 @@ def upgrade() -> None:
         sa.Column("annotation_count", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("validation_result", sa.JSON(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=36), nullable=True),
         *timestamp_columns(),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
         sa.ForeignKeyConstraint(["dataset_id"], ["datasets.id"]),
         sa.ForeignKeyConstraint(["parent_id"], ["dataset_versions.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -143,9 +123,7 @@ def upgrade() -> None:
         sa.Column("error_summary", sa.JSON(), nullable=False),
         sa.Column("log_path", sa.Text(), nullable=True),
         sa.Column("retry_count", sa.Integer(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=36), nullable=True),
         *timestamp_columns(),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("idempotency_key"),
     )
@@ -158,17 +136,13 @@ def upgrade() -> None:
     op.create_table(
         "audit_events",
         sa.Column("id", sa.String(length=36), nullable=False),
-        sa.Column("actor_user_id", sa.String(length=36), nullable=True),
         sa.Column("action", sa.String(length=150), nullable=False),
         sa.Column("resource_type", sa.String(length=100), nullable=False),
         sa.Column("resource_id", sa.String(length=100), nullable=False),
         sa.Column("details", sa.JSON(), nullable=False),
-        sa.Column("ip_address", sa.String(length=45), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["actor_user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_audit_events_actor_user_id", "audit_events", ["actor_user_id"])
     op.create_index("ix_audit_events_resource_id", "audit_events", ["resource_id"])
 
 
@@ -180,4 +154,3 @@ def downgrade() -> None:
     op.drop_table("dataset_versions")
     op.drop_table("datasets")
     op.drop_table("allowed_roots")
-    op.drop_table("users")

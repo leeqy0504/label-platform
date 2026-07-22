@@ -9,7 +9,6 @@ def test_health_reports_service_ready(tmp_path):
         database_url="sqlite+pysqlite:///:memory:",
         redis_url="redis://localhost:6379/15",
         managed_data_root=tmp_path / "managed",
-        session_secret="test-secret-with-at-least-32-characters",
     )
     with TestClient(create_app(settings)) as client:
         response = client.get("/api/health")

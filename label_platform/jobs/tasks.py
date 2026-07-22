@@ -81,7 +81,6 @@ class JobRunner:
                     source_path=source_path,
                     categories=tuple(cast(list[str], metadata["categories"])),
                     task_type=task_type,
-                    created_by_id=cast(str, request["created_by_id"]),
                     split_seed=cast(int, split["seed"]),
                     split_ratios={
                         name: float(split[name]) for name in ("train", "val", "test")

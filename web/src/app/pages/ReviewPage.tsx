@@ -73,7 +73,6 @@ export default function ReviewPage() {
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-32">Project ID</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-48">审核进度</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-20">状态</th>
-              <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-16">创建人</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-28">开始时间</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-20">输出版本</th>
               <th className="w-36" />
@@ -121,7 +120,6 @@ export default function ReviewPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2.5"><StatusBadge status={session.status} /></td>
-                  <td className="px-3 py-2.5 text-xs text-gray-600">{session.createdBy}</td>
                   <td className="px-3 py-2.5 text-xs text-gray-500">{formatDate(session.startedAt)}</td>
                   <td className="px-3 py-2.5 text-xs font-mono text-gray-600">{session.outputVersion ?? '—'}</td>
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>

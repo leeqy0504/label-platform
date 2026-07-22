@@ -75,10 +75,6 @@ export function VersionsTab({ dataset }: { dataset: Dataset }) {
                   </div>
                 )}
                 <div>
-                  <span className="text-gray-500">创建人</span>
-                  <p className="text-gray-800 mt-0.5">{ver.createdBy}</p>
-                </div>
-                <div>
                   <span className="text-gray-500">图片数</span>
                   <p className="text-gray-900 font-medium tabular-nums mt-0.5">{ver.imageCount.toLocaleString()}</p>
                 </div>

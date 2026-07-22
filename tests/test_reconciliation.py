@@ -17,8 +17,8 @@ class RecordingWorkflow:
         self.ids.append(item_id)
 
 
-def test_reconciliation_checks_only_active_bound_external_work(db_session, user):
-    dataset = Dataset(name="reconcile", description="", created_by_id=user.id)
+def test_reconciliation_checks_only_active_bound_external_work(db_session):
+    dataset = Dataset(name="reconcile", description="")
     version = DatasetVersion(
         dataset=dataset,
         version_number=1,
@@ -34,7 +34,6 @@ def test_reconciliation_checks_only_active_bound_external_work(db_session, user)
         status=ReviewStatus.READY,
         recoverable_status=ReviewStatus.READY,
         config_hash="a" * 64,
-        created_by_id=user.id,
     )
     run = TrainingRun(
         dataset=dataset,
@@ -47,7 +46,6 @@ def test_reconciliation_checks_only_active_bound_external_work(db_session, user)
         config={"epochs": 10},
         status=TrainingStatus.RUNNING,
         total_epochs=10,
-        created_by_id=user.id,
     )
     db_session.add_all([review, run])
     db_session.commit()

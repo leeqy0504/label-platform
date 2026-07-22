@@ -18,7 +18,6 @@ import { CopyButton } from '../shared/CopyButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Progress } from '../ui/progress';
-import { useAuth } from '../../auth/AuthProvider';
 
 const JOB_STAGE_LABEL: Record<string, string> = {
   pending: '等待后台任务',
@@ -102,8 +101,6 @@ function CreateSessionDialog({ open, onOpenChange, dataset, onCreated }: CreateS
 }
 
 export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?: () => Promise<void> }) {
-  const { user } = useAuth();
-  const canOperate = user?.role === 'admin' || user?.role === 'data_engineer';
   const mounted = useRef(true);
   const [sessions, setSessions] = useState<ReviewSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -257,13 +254,13 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
           <button onClick={() => { void loadSessions(); }} className="size-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded" title="刷新">
             <RefreshCw className="size-3.5" />
           </button>
-          {canOperate && <button
+          <button
             onClick={() => setCreateOpen(true)}
             disabled={lsStatus !== 'online' || dataset.status === 'archived' || !dataset.versions.some(version => version.isImmutable)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded disabled:opacity-40 transition-colors"
           >
             <Plus className="size-4" />创建审核任务
-          </button>}
+          </button>
         </div>
       </div>
 
@@ -309,13 +306,12 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
                       Project ID: <code className="font-mono text-gray-700">{session.labelStudioProjectId}</code>
                       <CopyButton text={String(session.labelStudioProjectId)} />
                     </span>}
-                    <span>创建人: {session.createdBy}</span>
                     <span>开始: {formatDate(session.startedAt)}</span>
                     {session.completedAt && <span>完成: {formatDate(session.completedAt)}</span>}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {canOperate && ['ready', 'in_review'].includes(session.status) && (
+                  {['ready', 'in_review'].includes(session.status) && (
                     <button
                       onClick={() => setDeleteTarget(session)}
                       disabled={deletingId === session.id}
@@ -337,7 +333,7 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
                     <ExternalLink className="size-3.5" />
                     在 Label Studio 中打开
                   </a>}
-                  {canOperate && ['ready', 'in_review'].includes(session.status) && (
+                  {['ready', 'in_review'].includes(session.status) && (
                     <button
                       onClick={() => setFinalizeTarget(session)}
                       disabled={finalizing}
@@ -391,13 +387,13 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
                   <span className="text-red-700">
                     {session.errorSummary.message ?? '审核任务失败，请检查任务状态后重试'}
                   </span>
-                  {canOperate && <button
+                  <button
                     onClick={() => { void handleRetry(session.id); }}
                     disabled={retryingId === session.id}
                     className="ml-auto text-red-700 underline disabled:opacity-50"
                   >
                     {retryingId === session.id ? '重试中...' : '重试'}
-                  </button>}
+                  </button>
                 </div>
               )}
 

@@ -19,7 +19,6 @@ import type {
   SystemConfig,
   TrainingRun,
   TrainingStatus,
-  User,
 } from '../types';
 
 interface ApiMeta { page: number; page_size: number; total: number }
@@ -32,7 +31,6 @@ interface ApiDataset {
   status: DatasetStatus;
   created_at: string;
   updated_at: string;
-  created_by: string;
   current_version: number | null;
   current_version_id: string | null;
   item_count: number;
@@ -64,7 +62,6 @@ interface ApiVersion {
   annotation_count: number;
   training_count?: number;
   validation_result: Dataset['validationResult'];
-  created_by: string | null;
   created_at: string;
 }
 
@@ -100,7 +97,6 @@ interface ApiReview {
   skipped_tasks: number;
   status: ReviewSession['status'];
   error_summary: ReviewSession['errorSummary'];
-  created_by: string;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -136,7 +132,6 @@ interface ApiTrainingRun {
   };
   external_detail_url: string | null;
   error_summary: { code?: string; message?: string };
-  created_by: string;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
@@ -177,7 +172,6 @@ interface ApiModel {
   evaluation_files: string[];
   evaluation_links: Array<{ name: string; url: string }>;
   created_at: string;
-  created_by: string;
 }
 
 const categoryColors = ['#2563EB', '#059669', '#D97706', '#DC2626', '#7C3AED', '#0891B2'];
@@ -213,7 +207,6 @@ function mapVersion(version: ApiVersion, versions: ApiVersion[]): DatasetVersion
     annotationCount: version.annotation_count,
     categorySchema: mapCategories(version.class_schema, version.category_counts),
     createdAt: version.created_at,
-    createdBy: version.created_by ?? '—',
     reviewSessionId: version.review_session_id,
     trainingCount: version.training_count ?? 0,
     isImmutable: version.status === 'ready',
@@ -236,7 +229,6 @@ function mapDataset(dataset: ApiDataset, versions: ApiVersion[] = []): Dataset {
     status: dataset.status,
     updatedAt: dataset.updated_at,
     createdAt: dataset.created_at,
-    createdBy: dataset.created_by,
     rootPath: dataset.sources?.[0]?.relative_path ?? '',
     categories: mapCategories(dataset.class_schema, dataset.category_counts),
     versions: versions.map(version => mapVersion(version, versions)),
@@ -263,7 +255,6 @@ function mapReview(review: ApiReview): ReviewSession {
     completedTasks: review.completed_tasks,
     skippedTasks: review.skipped_tasks,
     status: review.status,
-    createdBy: review.created_by,
     startedAt: review.started_at,
     completedAt: review.completed_at,
     outputVersion: review.output_version_number ? `v${review.output_version_number}` : null,
@@ -322,7 +313,6 @@ function mapTrainingRun(
     primaryMetric: numericMetric(summary, 'mAP50', 'map50', 'mask_mAP50'),
     secondaryMetric: numericMetric(summary, 'mAP50_95', 'map', 'mask_mAP50_95'),
     metricName: 'mAP50',
-    startedBy: run.created_by,
     startedAt,
     completedAt: run.completed_at,
     durationSeconds: Number.isFinite(start) ? Math.max(0, Math.floor((end - start) / 1000)) : 0,
@@ -370,7 +360,6 @@ function mapModel(model: ApiModel): Model {
     fileSize: model.file_size / 1024 / 1024,
     filePath: model.file_path,
     createdAt: model.created_at,
-    createdBy: model.created_by,
     categories: model.categories,
     categoryAP: model.category_metrics.map(item => ({
       category: String(item.category ?? item.class_name ?? item.name ?? 'unknown'),
@@ -607,41 +596,6 @@ export function getModel(id: string) {
   return request<ApiModel>(`/api/models/${id}`).then(mapModel);
 }
 
-export async function listUsers(): Promise<User[]> {
-  const users = await request<Array<{
-    id: string; name: string; email: string; role: User['role']; is_active: boolean;
-    created_at: string; last_login_at: string | null;
-  }>>('/api/admin/users');
-  return users.map(user => ({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    isActive: user.is_active,
-    createdAt: user.created_at,
-    lastLogin: user.last_login_at ?? '',
-  }));
-}
-
-export function createUser(payload: {
-  name: string; email: string; password: string; role: User['role'];
-}): Promise<void> {
-  return request('/api/admin/users', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }).then(() => undefined);
-}
-
-export function updateUser(
-  userId: string,
-  payload: { name?: string; role?: User['role']; is_active?: boolean },
-): Promise<void> {
-  return request(`/api/admin/users/${userId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  }).then(() => undefined);
-}
-
 export function createAllowedRoot(payload: {
   path: string; label: string; description: string;
 }): Promise<void> {
@@ -664,22 +618,19 @@ export function updateAllowedRoot(
 export async function listAuditLogs(params?: { page?: number; pageSize?: number }) {
   const query = new URLSearchParams({ page: String(params?.page ?? 1), page_size: String(params?.pageSize ?? 20) });
   const response = await request<ApiList<{
-    id: string; action: string; user_id: string | null; user_name: string;
+    id: string; action: string;
     resource_type: string; resource_id: string; resource_name: string;
-    timestamp: string; details: Record<string, unknown>; ip_address: string | null;
+    timestamp: string; details: Record<string, unknown>;
   }>>(`/api/admin/audit-events?${query}`);
   return {
     data: response.data.map<AuditLog>(event => ({
       id: event.id,
       action: event.action,
-      userId: event.user_id ?? '',
-      userName: event.user_name,
       resourceType: event.resource_type,
       resourceId: event.resource_id,
       resourceName: event.resource_name,
       timestamp: event.timestamp,
       details: JSON.stringify(event.details),
-      ipAddress: event.ip_address ?? '',
     })),
     meta: pageMeta(response.meta),
   };

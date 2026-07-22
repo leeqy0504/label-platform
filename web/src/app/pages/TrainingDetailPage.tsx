@@ -12,7 +12,6 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts';
 import { cn } from '../components/ui/utils';
-import { useAuth } from '../auth/AuthProvider';
 
 function MetricChart({
   data,
@@ -129,8 +128,6 @@ function formatDuration(seconds: number): string {
 export default function TrainingDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const canOperate = user?.role === 'admin' || user?.role === 'data_engineer';
   const [run, setRun] = useState<TrainingRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +214,6 @@ export default function TrainingDetailPage() {
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>{run.datasetName} <code className="font-mono text-gray-700">{run.datasetVersion}</code></span>
-              <span>启动人: {run.startedBy}</span>
               <span>启动时间: {new Date(run.startedAt).toLocaleString('zh-CN')}</span>
               <span>耗时: {formatDuration(run.durationSeconds)}</span>
               <span className="flex items-center gap-1">
@@ -230,13 +226,13 @@ export default function TrainingDetailPage() {
             <button onClick={() => void load(false)} title="刷新" className="size-7 flex items-center justify-center text-gray-400 hover:bg-gray-100 rounded">
               <RefreshCw className="size-3.5" />
             </button>
-            {canOperate && ['queued', 'running'].includes(run.status) && (
+            {['queued', 'running'].includes(run.status) && (
               <button onClick={stop}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-red-200 text-red-700 hover:bg-red-50 rounded">
                 <Square className="size-3" />停止
               </button>
             )}
-            {canOperate && run.status === 'failed' && !run.unitTrainRunId && run.jobId && (
+            {run.status === 'failed' && !run.unitTrainRunId && run.jobId && (
               <button onClick={retry}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-blue-200 text-blue-700 hover:bg-blue-50 rounded">
                 <RotateCcw className="size-3.5" />重试提交

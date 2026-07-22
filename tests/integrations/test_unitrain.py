@@ -92,7 +92,7 @@ def test_unitrain_connector_covers_run_logs_metrics_stop_and_models():
     assert connector.get_model("model-1").run_id == "run-1"
     artifact = connector.get_model_artifact("model-1", "artifacts/evaluation/report.md")
     assert artifact.content == b"report" and artifact.content_type == "text/markdown"
-    assert all(request.headers["authorization"] == "Bearer secret" for request in requests)
+    assert all(request.headers["x-api-key"] == "secret" for request in requests)
 
 
 def model_payload():

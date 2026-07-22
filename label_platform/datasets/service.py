@@ -33,7 +33,6 @@ class DatasetRegistrationRequest:
     source_path: Path
     categories: tuple[str, ...]
     task_type: TaskType
-    created_by_id: str
     split_seed: int = 42
     split_ratios: dict[str, float] | None = None
     source_version: str | None = None
@@ -228,7 +227,6 @@ class RegistrationService:
                 status=VersionStatus.BUILDING,
                 review_session_id=request.review_session_id,
                 class_schema=[],
-                created_by_id=request.created_by_id,
             )
             session.add(version)
             session.flush()
@@ -303,7 +301,6 @@ class RegistrationService:
             session.flush()
             session.add(
                 AuditEvent(
-                    actor_user_id=request.created_by_id,
                     action="dataset.version_published",
                     resource_type="version",
                     resource_id=version.id,

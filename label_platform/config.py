@@ -15,9 +15,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://platform:platform@localhost:5432/platform"
     redis_url: str = "redis://localhost:6379/0"
     managed_data_root: Path = Path("./var/managed")
-    session_secret: str = Field(min_length=32)
-    session_max_age_seconds: int = 28_800
-    secure_cookies: bool = False
     environment: Literal["development", "test", "production"] = "development"
     label_studio_url: str = "http://127.0.0.1:8081"
     label_studio_public_url: str = "http://127.0.0.1:8081"

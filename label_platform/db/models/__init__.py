@@ -1,4 +1,4 @@
-from label_platform.db.models.accounts import AllowedRoot, User
+from label_platform.db.models.accounts import AllowedRoot
 from label_platform.db.models.datasets import Dataset, DatasetItem, DatasetSource, DatasetVersion
 from label_platform.db.models.jobs import AuditEvent, BackgroundJob
 from label_platform.db.models.reviews import ReviewSession, ReviewTaskBinding
@@ -15,5 +15,4 @@ __all__ = [
     "ReviewSession",
     "ReviewTaskBinding",
     "TrainingRun",
-    "User",
 ]

@@ -56,7 +56,6 @@ class ReviewWorkflow:
         *,
         dataset_id: str,
         input_version_id: str,
-        created_by_id: str,
         idempotency_key: str,
     ) -> ReviewSession:
         with self.session_factory() as session, session.begin():
@@ -67,7 +66,6 @@ class ReviewWorkflow:
                 if (
                     existing.dataset_id != dataset_id
                     or existing.input_version_id != input_version_id
-                    or existing.created_by_id != created_by_id
                 ):
                     raise ReviewConflictError(
                         "Review idempotency key was used for a different request"
@@ -96,13 +94,11 @@ class ReviewWorkflow:
                 status=ReviewStatus.CREATING,
                 recoverable_status=ReviewStatus.CREATING,
                 config_hash=hashlib.sha256(label_config.encode("utf-8")).hexdigest(),
-                created_by_id=created_by_id,
             )
             session.add(review)
             session.flush()
             session.add(
                 AuditEvent(
-                    actor_user_id=created_by_id,
                     action="review.creation_requested",
                     resource_type="review",
                     resource_id=review.id,
@@ -233,7 +229,7 @@ class ReviewWorkflow:
             session.expunge(review)
             return review
 
-    def delete_session(self, review_id: str, *, deleted_by_id: str) -> None:
+    def delete_session(self, review_id: str) -> None:
         with self.session_factory() as session, session.begin():
             review = session.scalar(
                 select(ReviewSession).where(ReviewSession.id == review_id).with_for_update()
@@ -288,7 +284,6 @@ class ReviewWorkflow:
             session.delete(review)
             session.add(
                 AuditEvent(
-                    actor_user_id=deleted_by_id,
                     action="review.deleted",
                     resource_type="review",
                     resource_id=review_id,
@@ -322,7 +317,6 @@ class ReviewWorkflow:
                 if review.label_studio_project_id is None:
                     raise ReviewWorkflowError("Review project is not ready")
                 project_id = review.label_studio_project_id
-                created_by_id = review.created_by_id
                 input_version_id = review.input_version_id
                 dataset_id = review.dataset_id
 
@@ -348,7 +342,6 @@ class ReviewWorkflow:
                     source_path=version_root,
                     categories=categories,
                     task_type=task_type,
-                    created_by_id=created_by_id,
                     source_version=f"label-studio-project-{project_id}",
                     source_lineage={
                         "review_session_id": review_id,
@@ -509,7 +502,6 @@ class ReviewWorkflow:
             if not already_ready:
                 session.add(
                     AuditEvent(
-                        actor_user_id=review.created_by_id,
                         action="review.ready",
                         resource_type="review",
                         resource_id=review.id,
@@ -548,7 +540,6 @@ class ReviewWorkflow:
             )
             session.add(
                 AuditEvent(
-                    actor_user_id=review.created_by_id,
                     action="review.completed",
                     resource_type="review",
                     resource_id=review.id,

@@ -69,7 +69,6 @@ export default function ModelDetailPage() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
               <span>{model.datasetName} <code className="font-mono text-gray-700">{model.datasetVersion}</code></span>
               <span>{model.taskType === 'detection' ? 'Detection' : 'Instance Segmentation'}</span>
-              <span>创建人: {model.createdBy}</span>
               <span>{new Date(model.createdAt).toLocaleString('zh-CN')}</span>
             </div>
           </div>

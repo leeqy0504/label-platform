@@ -5,7 +5,6 @@ from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer, JSON, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from label_platform.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from label_platform.db.models.accounts import User
 from label_platform.db.models.datasets import Dataset, DatasetVersion
 from label_platform.domain.enums import TaskType, TrainingStatus
 
@@ -50,10 +49,8 @@ class TrainingRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     external_detail_url: Mapped[str | None] = mapped_column(Text)
     metric_summary: Mapped[dict[str, float]] = mapped_column(JSON, default=dict, nullable=False)
     error_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
-    created_by_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     dataset: Mapped[Dataset] = relationship()
     dataset_version: Mapped[DatasetVersion] = relationship()
-    created_by: Mapped[User] = relationship()

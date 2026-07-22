@@ -100,7 +100,6 @@ export default function TrainingPage() {
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-20">状态</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-36">进度</th>
               <th className="text-right px-3 py-2.5 text-xs font-medium text-gray-500 w-20">mAP50</th>
-              <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-20">启动人</th>
               <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-28">启动时间</th>
               <th className="text-right px-3 py-2.5 text-xs font-medium text-gray-500 w-20">耗时</th>
             </tr>
@@ -154,7 +153,6 @@ export default function TrainingPage() {
                     {run.primaryMetric > 0 ? run.primaryMetric.toFixed(3) : '—'}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 text-xs text-gray-600">{run.startedBy}</td>
                 <td className="px-3 py-2.5 text-xs text-gray-500">{formatDate(run.startedAt)}</td>
                 <td className="px-3 py-2.5 text-right text-xs text-gray-500">{formatDuration(run.durationSeconds)}</td>
               </tr>

@@ -15,12 +15,10 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from label_platform.api.app import create_app
-from label_platform.auth.passwords import hash_password
 from label_platform.config import Settings
 from label_platform.db.base import Base
-from label_platform.db.models import AllowedRoot, User
+from label_platform.db.models import AllowedRoot
 from label_platform.db.session import create_session_factory
-from label_platform.domain.enums import UserRole
 
 
 @dataclass(frozen=True)
@@ -92,23 +90,16 @@ def integration_context(
         database_url=integration_engine.url.render_as_string(hide_password=False),
         redis_url=integration_redis_url,
         managed_data_root=managed_root,
-        session_secret="integration-secret-with-at-least-32-characters",
         environment="test",
     )
     monkeypatch.setenv("PLATFORM_DATABASE_URL", settings.database_url)
     monkeypatch.setenv("PLATFORM_REDIS_URL", settings.redis_url)
     monkeypatch.setenv("PLATFORM_MANAGED_DATA_ROOT", str(settings.managed_data_root))
-    monkeypatch.setenv("PLATFORM_SESSION_SECRET", settings.session_secret)
     monkeypatch.setenv("PLATFORM_ENVIRONMENT", settings.environment)
 
     root_id = _seed_account_and_root(session_factory, source_root)
     app = create_app(settings)
     with TestClient(app) as client:
-        login = client.post(
-            "/api/auth/login",
-            json={"email": "engineer@example.test", "password": "correct-horse"},
-        )
-        assert login.status_code == 200
         yield IntegrationContext(
             client=client,
             redis=redis,
@@ -123,18 +114,9 @@ def integration_context(
 
 def _seed_account_and_root(session_factory: sessionmaker[Session], source_root: Path) -> str:
     with session_factory() as session, session.begin():
-        user = User(
-            email="engineer@example.test",
-            name="Dataset Engineer",
-            password_hash=hash_password("correct-horse"),
-            role=UserRole.DATA_ENGINEER,
-        )
-        session.add(user)
-        session.flush()
         root = AllowedRoot(
             path=str(source_root),
             label="Integration sources",
-            created_by_id=user.id,
         )
         session.add(root)
         session.flush()

@@ -23,8 +23,8 @@ from label_platform.domain.enums import (
 )
 
 
-def test_dataset_version_keeps_schema_and_parent(db_session, user, allowed_root):
-    dataset = Dataset(name="warehouse", description="", created_by_id=user.id)
+def test_dataset_version_keeps_schema_and_parent(db_session, allowed_root):
+    dataset = Dataset(name="warehouse", description="")
     source = DatasetSource(
         dataset=dataset,
         allowed_root_id=allowed_root.id,
@@ -57,8 +57,8 @@ def test_dataset_version_keeps_schema_and_parent(db_session, user, allowed_root)
     assert dataset.sources == [source]
 
 
-def test_item_job_and_audit_keep_operational_metadata(db_session, user):
-    dataset = Dataset(name="operations", description="", created_by_id=user.id)
+def test_item_job_and_audit_keep_operational_metadata(db_session):
+    dataset = Dataset(name="operations", description="")
     version = DatasetVersion(
         dataset=dataset,
         version_number=1,
@@ -92,17 +92,14 @@ def test_item_job_and_audit_keep_operational_metadata(db_session, user):
         error_summary={"code": "invalid_bbox", "count": 1},
         log_path="logs/register-operations-v1.log",
         retry_count=2,
-        created_by_id=user.id,
     )
     db_session.add_all([item, job])
     db_session.flush()
     audit = AuditEvent(
-        actor_user_id=user.id,
         action="dataset.registration_failed",
         resource_type="dataset",
         resource_id=dataset.id,
         details={"job_id": job.id},
-        ip_address="127.0.0.1",
     )
     db_session.add(audit)
     db_session.commit()
@@ -113,8 +110,8 @@ def test_item_job_and_audit_keep_operational_metadata(db_session, user):
     assert audit.details == {"job_id": job.id}
 
 
-def test_sample_key_is_unique_within_a_version(db_session, user):
-    dataset = Dataset(name="unique-items", description="", created_by_id=user.id)
+def test_sample_key_is_unique_within_a_version(db_session):
+    dataset = Dataset(name="unique-items", description="")
     version = DatasetVersion(
         dataset=dataset,
         version_number=1,
@@ -149,12 +146,12 @@ def test_sample_key_is_unique_within_a_version(db_session, user):
         db_session.commit()
 
 
-def test_allowed_root_path_is_unique(db_session, user, tmp_path):
+def test_allowed_root_path_is_unique(db_session, tmp_path):
     path = str(tmp_path / "shared-root")
     db_session.add_all(
         [
-            AllowedRoot(path=path, label="First", created_by_id=user.id),
-            AllowedRoot(path=path, label="Second", created_by_id=user.id),
+            AllowedRoot(path=path, label="First"),
+            AllowedRoot(path=path, label="Second"),
         ]
     )
 
@@ -162,8 +159,8 @@ def test_allowed_root_path_is_unique(db_session, user, tmp_path):
         db_session.commit()
 
 
-def test_version_number_is_unique_within_a_dataset(db_session, user):
-    dataset = Dataset(name="unique-versions", description="", created_by_id=user.id)
+def test_version_number_is_unique_within_a_dataset(db_session):
+    dataset = Dataset(name="unique-versions", description="")
     db_session.add_all(
         [
             DatasetVersion(
@@ -185,8 +182,8 @@ def test_version_number_is_unique_within_a_dataset(db_session, user):
         db_session.commit()
 
 
-def test_review_session_binds_label_studio_tasks_to_input_items(db_session, user):
-    dataset = Dataset(name="review-model", description="", created_by_id=user.id)
+def test_review_session_binds_label_studio_tasks_to_input_items(db_session):
+    dataset = Dataset(name="review-model", description="")
     version = DatasetVersion(
         dataset=dataset,
         version_number=1,
@@ -213,7 +210,6 @@ def test_review_session_binds_label_studio_tasks_to_input_items(db_session, user
         status=ReviewStatus.IMPORTING,
         recoverable_status=ReviewStatus.IMPORTING,
         config_hash="b" * 64,
-        created_by_id=user.id,
     )
     binding = ReviewTaskBinding(
         review_session=review,
@@ -230,8 +226,8 @@ def test_review_session_binds_label_studio_tasks_to_input_items(db_session, user
     assert review.status is ReviewStatus.IMPORTING
 
 
-def test_training_run_binds_ready_version_to_external_run(db_session, user):
-    dataset = Dataset(name="training-model", description="", created_by_id=user.id)
+def test_training_run_binds_ready_version_to_external_run(db_session):
+    dataset = Dataset(name="training-model", description="")
     version = DatasetVersion(
         dataset=dataset,
         version_number=2,
@@ -252,7 +248,6 @@ def test_training_run_binds_ready_version_to_external_run(db_session, user):
         total_epochs=10,
         external_detail_url="http://unitrain.test/runs/unitrain-run-7",
         metric_summary={"mAP50": 0.5},
-        created_by_id=user.id,
     )
     db_session.add(run)
     db_session.commit()
