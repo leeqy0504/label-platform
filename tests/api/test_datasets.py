@@ -65,6 +65,18 @@ def analyze(client, root_id, *, key="analysis-1"):
     return job.json()
 
 
+def snapshot_files(root):
+    return {
+        path.relative_to(root).as_posix(): (
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+            path.stat().st_size,
+            path.stat().st_mtime_ns,
+        )
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 def test_analysis_returns_format_counts_splits_and_fingerprint(
     dataset_api,
     image_factory,
@@ -86,6 +98,84 @@ def test_analysis_returns_format_counts_splits_and_fingerprint(
     assert sum(job["result"]["split_counts"].values()) == 2
     assert len(job["result"]["fingerprint"]) == 64
     assert queue.analysis_enqueued_count == 1
+
+
+def test_yolo_analysis_and_registration_publish_coco_without_mutating_source(
+    dataset_api,
+    image_factory,
+):
+    client, _, _, _, root_id, source_root, managed_root = dataset_api
+    source = source_root / "incoming"
+    (source / "data.yaml").parent.mkdir(parents=True)
+    (source / "data.yaml").write_text(
+        "\n".join(
+            [
+                "path: /must/be/ignored",
+                "train: train/images",
+                "val: val/images",
+                "test: test/images",
+                "nc: 2",
+                "names: [person, rack]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    image_factory(source / "train/images/a.jpg", size=(20, 10))
+    image_factory(source / "train/images/nested/b.png", size=(12, 8))
+    image_factory(source / "val/images/c.jpg", size=(16, 12))
+    image_factory(source / "test/images/d.jpg", size=(10, 10))
+    (source / "train/labels").mkdir(parents=True)
+    (source / "train/labels/a.txt").write_text("1 0.5 0.5 0.4 0.6\n", encoding="utf-8")
+    (source / "val/labels").mkdir(parents=True)
+    (source / "val/labels/c.txt").write_text("", encoding="utf-8")
+    (source / "sample_manifest.txt").write_text("extra metadata\n", encoding="utf-8")
+    before = snapshot_files(source)
+
+    analyze_request = analysis_payload(root_id)
+    analyze_request["categories"] = ["must-not-win"]
+    analyze_request["task_type"] = "instance_segmentation"
+    analysis_response = client.post("/api/datasets/analyze", json=analyze_request)
+    assert analysis_response.status_code == 202
+    analysis = client.get(f"/api/jobs/{analysis_response.json()['job_id']}").json()
+
+    assert analysis["status"] == "succeeded"
+    result = analysis["result"]
+    assert result["source_format"] == "yolo_detection"
+    assert result["task_type"] == "detection"
+    assert result["image_count"] == 4
+    assert result["annotation_count"] == 1
+    assert result["categories"] == ["person", "rack"]
+    assert result["split_counts"] == {"train": 2, "val": 1, "test": 1}
+    assert result["unsupported_files"] == ["sample_manifest.txt"]
+
+    payload = registration_payload(root_id, result["fingerprint"])
+    payload["categories"] = ["must-not-win"]
+    payload["task_type"] = "instance_segmentation"
+    accepted = client.post("/api/datasets/register", json=payload)
+    assert accepted.status_code == 202
+    registration = client.get(f"/api/jobs/{accepted.json()['job_id']}").json()
+    assert registration["status"] == "succeeded"
+
+    version_root = managed_root / registration["result"]["dataset_id"] / "versions/v1"
+    manifest = json.loads((version_root / "manifest.json").read_text(encoding="utf-8"))
+    coco = json.loads(
+        (version_root / "annotations/instances.coco.json").read_text(encoding="utf-8")
+    )
+    assert manifest["source_format"] == "yolo_detection"
+    assert manifest["task_type"] == "detection"
+    assert manifest["split_counts"] == {"train": 2, "val": 1, "test": 1}
+    assert coco["categories"] == [{"id": 1, "name": "person"}, {"id": 2, "name": "rack"}]
+    assert coco["annotations"][0]["category_id"] == 2
+    assert coco["annotations"][0]["bbox"] == pytest.approx([6.0, 2.0, 8.0, 6.0])
+    assert {image["file_name"] for image in coco["images"]} == {
+        "images/train/a.jpg",
+        "images/train/nested/b.png",
+        "images/val/c.jpg",
+        "images/test/d.jpg",
+    }
+    assert all((version_root / image["file_name"]).is_file() for image in coco["images"])
+    assert snapshot_files(source) == before
 
 
 def test_invalid_analysis_succeeds_with_structured_errors_and_cannot_register(

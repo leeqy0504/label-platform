@@ -19,6 +19,7 @@ from label_platform.datasets.publisher import (
     DatasetPublisher,
     PublicationResult,
 )
+from label_platform.datasets.yolo_adapter import YoloDetectionAdapter
 from label_platform.db.models import AuditEvent, Dataset, DatasetItem, DatasetVersion
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
@@ -353,5 +354,11 @@ def adapt_source(
             detected.annotation_path,
             dataset_id=dataset_id,
             categories=list(categories) or None,
+        )
+    if detected.format is SourceFormat.YOLO_DETECTION:
+        return YoloDetectionAdapter().read(
+            source_path,
+            dataset_id=dataset_id,
+            config_path=detected.annotation_path,
         )
     raise DatasetRegistrationError(f"Unsupported source format: {detected.format}")

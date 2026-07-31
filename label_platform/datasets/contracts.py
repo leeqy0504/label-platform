@@ -37,3 +37,4 @@ class SourceDataset:
     annotations: tuple[SourceAnnotation, ...]
     categories: tuple[str, ...]
     category_id_mapping: dict[str, int]
+    consumed_files: tuple[str, ...] = ()

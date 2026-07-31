@@ -77,7 +77,7 @@ def analyze_dataset_source(
             split_seed=split_seed,
             split_ratios=split_ratios,
         )
-        unsupported = _unsupported_files(source_path)
+        unsupported = _unsupported_files(source_path, consumed_files=source.consumed_files)
         return {
             "valid": True,
             "source_format": source.format.value,
@@ -109,14 +109,16 @@ def analyze_dataset_source(
         }
 
 
-def _unsupported_files(source_path: Path) -> list[str]:
+def _unsupported_files(source_path: Path, *, consumed_files: tuple[str, ...] = ()) -> list[str]:
     supported = {".jpg", ".jpeg", ".png", ".webp", ".json", ".zip"}
+    consumed = set(consumed_files)
     try:
         root = source_path.resolve(strict=True)
         return [
             path.relative_to(root).as_posix()
             for path in iter_safe_files(root)
             if path.suffix.lower() not in supported
+            and path.relative_to(root).as_posix() not in consumed
         ]
     except (OSError, SourcePathError):
         return []

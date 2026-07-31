@@ -25,6 +25,7 @@ def detect_source(source_path: Path) -> DetectedSource:
     except SourcePathError as exc:
         raise SourceFormatError(f"source must be an existing safe directory: {exc}") from exc
 
+    resolved_source = source_path.resolve(strict=True)
     detected_annotations: list[DetectedSource] = []
     for path in files:
         suffix = path.suffix.lower()
@@ -32,14 +33,29 @@ def detect_source(source_path: Path) -> DetectedSource:
             detected_annotations.append(
                 DetectedSource(
                     format=SourceFormat.LABEL_STUDIO,
-                    source_path=source_path.resolve(strict=True),
+                    source_path=resolved_source,
                     annotation_path=path,
                 )
             )
         elif suffix == ".json":
-            detected = _detect_json(path, source_path.resolve(strict=True))
+            detected = _detect_json(path, resolved_source)
             if detected is not None:
                 detected_annotations.append(detected)
+
+    yolo_configs = [
+        path
+        for path in files
+        if path.parent == resolved_source and path.name.lower() in {"data.yaml", "data.yml"}
+    ]
+    detected_annotations.extend(
+        DetectedSource(
+            format=SourceFormat.YOLO_DETECTION,
+            source_path=resolved_source,
+            annotation_path=path,
+            task_type=TaskType.DETECTION,
+        )
+        for path in yolo_configs
+    )
 
     if len(detected_annotations) > 1:
         raise SourceFormatError("directory contains multiple supported annotation sources")
@@ -49,7 +65,7 @@ def detect_source(source_path: Path) -> DetectedSource:
     if any(path.suffix.lower() in IMAGE_EXTENSIONS for path in files):
         return DetectedSource(
             format=SourceFormat.IMAGE_DIRECTORY,
-            source_path=source_path.resolve(strict=True),
+            source_path=resolved_source,
         )
 
     raise SourceFormatError("directory does not contain a supported dataset source")

@@ -20,6 +20,7 @@ import type {
   AnalysisResult,
   BackgroundJob,
   FileTreeNode,
+  SourceFormat,
   TaskType,
 } from '../../../types';
 import { addTask, updateTask } from '../../hooks/useBackgroundTasks';
@@ -40,11 +41,12 @@ interface Props {
 
 type Phase = 'idle' | 'analyzing' | 'registering' | 'done';
 
-const formatLabels: Record<string, string> = {
+const formatLabels: Record<SourceFormat, string> = {
   image_directory: 'Image Directory',
   coco_detection: 'COCO Detection',
   coco_instance: 'COCO Instance Segmentation',
   label_studio: 'Label Studio Export',
+  yolo_detection: 'YOLO Detection',
 };
 
 export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) {
@@ -320,6 +322,9 @@ export function RegisterDatasetDialog({ open, onOpenChange, onSuccess }: Props) 
                     placeholder="person, rack, cargo"
                     className="w-full h-9 px-3 text-sm border border-gray-300 rounded"
                   />
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    仅用于纯图片或未提供类别的标注源；YOLO 类别以 data.yaml 为准。
+                  </p>
                 </div>
                 <div>
                   <label htmlFor="dataset-name" className="block text-xs font-medium text-gray-700 mb-1">数据集名称</label>
@@ -407,7 +412,9 @@ function AnalysisPanel({ analysis }: { analysis: AnalysisResult }) {
     <div className="grid grid-cols-4 gap-3 bg-green-50 border border-green-200 rounded p-3">
       <div>
         <p className="text-[11px] text-green-700">源格式</p>
-        <p className="text-xs font-medium text-green-950">{formatLabels[analysis.source_format ?? '']}</p>
+        <p className="text-xs font-medium text-green-950">
+          {analysis.source_format ? formatLabels[analysis.source_format] : '—'}
+        </p>
       </div>
       <div>
         <p className="text-[11px] text-green-700">媒体</p>

@@ -16,7 +16,12 @@ export type ReviewStatus =
   | 'completed'
   | 'failed';
 export type TaskType = 'detection' | 'instance_segmentation';
-export type SourceFormat = 'image_directory' | 'coco_detection' | 'coco_instance' | 'label_studio';
+export type SourceFormat =
+  | 'image_directory'
+  | 'coco_detection'
+  | 'coco_instance'
+  | 'label_studio'
+  | 'yolo_detection';
 export type SplitType = 'train' | 'val' | 'test';
 export type AnnotationStatus = 'annotated' | 'unannotated' | 'partial';
 export type ConnectionStatus = 'online' | 'offline' | 'checking';
@@ -266,7 +271,7 @@ export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancel
 
 export interface AnalysisResult {
   valid: boolean;
-  source_format: 'image_directory' | 'coco_detection' | 'coco_instance' | 'label_studio' | null;
+  source_format: SourceFormat | null;
   task_type: TaskType | null;
   image_count: number;
   annotation_count: number;

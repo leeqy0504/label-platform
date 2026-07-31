@@ -6,6 +6,7 @@ class SourceFormat(StrEnum):
     COCO_DETECTION = "coco_detection"
     COCO_INSTANCE = "coco_instance"
     LABEL_STUDIO = "label_studio"
+    YOLO_DETECTION = "yolo_detection"
 
 
 class TaskType(StrEnum):

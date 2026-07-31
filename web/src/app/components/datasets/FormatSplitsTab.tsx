@@ -7,6 +7,7 @@ const SOURCE_FORMAT_LABEL: Record<SourceFormat, string> = {
   coco_detection: 'COCO Detection',
   coco_instance: 'COCO Instance Segmentation',
   label_studio: 'Label Studio 导出',
+  yolo_detection: 'YOLO Detection',
 };
 
 const TASK_TYPE_LABEL: Record<TaskType, string> = {

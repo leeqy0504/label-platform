@@ -15,23 +15,24 @@
 
 平台登记的是一个**服务器目录**，不是单独的 JSON 文件。管理员需要先在“系统管理”中把数据所在的上级目录配置为允许读取的来源根目录；登记时选择该根目录下的数据集目录，然后先执行“分析目录”，分析通过后才能登记。
 
-平台支持以下四种来源：
+平台支持以下五种来源：
 
 | 来源 | 标注文件 | 用途 |
 |------|----------|------|
 | Image Directory | 无 | 只有图片、尚未标注的数据集 |
+| YOLO Detection | 根目录 `data.yaml`/`data.yml` 和 `labels/*.txt` | YOLO 归一化目标检测框 |
 | COCO Detection | 一个 COCO JSON | 目标检测框 |
 | COCO Instance Segmentation | 一个 COCO JSON | 多边形或 RLE 实例掩码 |
 | Label Studio Export | 一个 JSON 或 ZIP | Label Studio 原生导出或 COCO 导出 |
 
-YOLO TXT、YOLO OBB 和自定义 YOLO JSON 不是平台导入格式，必须先转换为下面定义的单文件 COCO 格式。平台不会读取 `labels/*.txt`，也不会把包含 `bbox_xyxy` 的自定义 JSON 自动转换成 COCO。
+首版只支持标准 YOLO Detection。YOLO Segmentation、OBB、分类、姿态和自定义 YOLO JSON 仍需先转换为受支持格式；平台不会把包含 `bbox_xyxy` 的自定义 JSON 自动转换成 COCO。
 
 ### 所有来源的共同要求
 
 - 数据集必须是一个真实目录，并位于管理员配置的允许来源根目录内。前端中选择目录，不选择标注文件。
 - 目录及其子目录不能包含符号链接；媒体必须是普通文件。路径必须使用 `/`，不能使用绝对路径、`..` 或反斜杠。
 - 支持的图片扩展名为 `.jpg`、`.jpeg`、`.png`、`.webp`，大小写不敏感。每张图片必须能够正常解码。
-- 一个数据集目录只能有**一个可识别的标注源**：一个 COCO JSON、一个 Label Studio JSON，或一个 Label Studio ZIP。多个 `train.json`、`val.json`、备份 `.json` 或 JSON 与 ZIP 并存会报 `directory contains multiple supported annotation sources`。
+- 一个数据集目录只能有**一个可识别的标注源**：一个 YOLO 配置、COCO JSON、Label Studio JSON 或 Label Studio ZIP。多个配置、多个有效 JSON/ZIP，或 YOLO 与其他标注源并存会报 `directory contains multiple supported annotation sources`。
 - JSON 必须是 UTF-8。需要保留旧标注文件时，应移出数据集目录，或使用不以 `.json` 结尾的名称，例如 `annotations.original.json.bak`。
 - 图片引用必须指向所选数据集目录内实际存在的文件；同一图片路径不能重复。文件名相同但位于不同子目录是允许的。
 - 分析后、登记前不要修改图片或标注。平台会校验分析指纹，内容发生变化时需要重新分析。
@@ -50,9 +51,47 @@ dataset/
     └── 00001.png
 ```
 
-目录内不能同时存在可识别的 COCO、Label Studio JSON 或 ZIP，否则平台会按标注数据集处理。登记时必须在“初始类别”中填写至少一个非空、互不重复的类别，并选择“目标检测”或“实例分割”；纯图片数据登记后的标注数为 0。
+目录内不能同时存在可识别的 YOLO、COCO、Label Studio JSON 或 ZIP，否则平台会按标注数据集处理。登记时必须在“初始类别”中填写至少一个非空、互不重复的类别，并选择“目标检测”或“实例分割”；纯图片数据登记后的标注数为 0。
 
 如果目录中存在自定义 `annotations.json`，但它不是 COCO 对象或 Label Studio 任务数组，平台可能仍把目录识别为 Image Directory 并显示 0 个标注。这不表示自定义标注已成功导入。
+
+### YOLO Detection
+
+推荐使用每个切分下并列的 `images/` 和 `labels/`。图片和 TXT 可以继续包含镜像子目录：
+
+```text
+dataset/
+├── data.yaml
+├── train/
+│   ├── images/camera-a/00001.jpg
+│   └── labels/camera-a/00001.txt
+├── val/
+│   ├── images/00002.jpg
+│   └── labels/00002.txt
+└── test/
+    └── images/00003.jpg
+```
+
+```yaml
+path: /an/old/machine/path  # 平台忽略此字段
+train: train/images
+val: val/images
+test: test/images
+nc: 2
+names: [person, AGV]
+```
+
+YOLO 导入约束：
+
+- 根目录必须且只能有一个 `data.yaml` 或 `data.yml`，文件不超过 1 MiB，并能通过 `yaml.safe_load` 解析。
+- `train` 必填，`val`、`test` 可选。值必须是数据集根目录内的相对图片目录；不接受绝对路径、URL、TXT 图片清单、`..` 跳转或符号链接。YAML 中的 `path` 始终被忽略。
+- `names` 可为字符串列表，或键从 0 开始连续编号的字典；名称必须非空且唯一。提供 `nc` 时必须等于类别数量。
+- 每个图片目录从其同级 `labels/` 读取镜像相对路径的 `.txt`。缺失或空 TXT 表示未标注图片；没有对应图片的孤立 TXT 会使分析失败。
+- 每个非空标注行必须是 `class cx cy width height` 五个字段。坐标必须是有限的 YOLO 归一化值，宽高大于 0，且整个框位于图片范围内；六字段分割、多边形和 OBB 行不受支持。平台仅对六位小数文本造成的最大 `1e-6` 边界量化误差做边界吸附并保持原宽高，更大的越界不会被裁剪。
+- 平台按真实图片尺寸转换为 COCO `[x, y, width, height]`，类别 ID 从 YOLO `0..N-1` 映射为 COCO `1..N`，并保留未使用类别及原有 train/val/test 切分。
+- 来源目录全程只读。转换后的图片、`manifest.json`、切分文件和 `annotations/instances.coco.json` 只写入平台自己的 `var/managed/<dataset-id>/versions/vN/`。
+
+`data.yaml` 和实际消费的 label TXT 不会列为“不支持文件”；`sample_manifest.txt` 等其他文件仍会作为附加文件显示。
 
 ### COCO Detection
 
@@ -227,15 +266,18 @@ Label Studio 约束：
 
 - COCO 可在 `images[]` 中使用可选字段 `split: "train" | "val" | "test"` 和 `group_key`。
 - Label Studio 原生导出可在 `data` 中使用 `split`，以及 `group_key` 或 `episode_id`。
+- YOLO Detection 始终保留 `data.yaml` 声明的 train/val/test 目录切分。
 - 同一个 `group_key`/`episode_id` 的图片不会被拆到不同切分；同一组内不能声明冲突的显式 `split`。
-- 平台**不会**根据 `images/train/`、`images/val/` 的目录名推断切分。没有显式 `split` 时，按种子和比例重新分配。
+- 对非 YOLO 来源，平台**不会**根据 `images/train/`、`images/val/` 的目录名推断切分。没有显式 `split` 时，按种子和比例重新分配。
 - 平台导入不接受 `annotations/train.json` 与 `annotations/val.json` 两个 COCO 标注源。需要先合并为一个 COCO JSON，并通过 `images[].split` 保留原切分。
 
 ### 常见导入错误
 
 | 错误 | 原因与处理 |
 |------|------------|
-| `directory contains multiple supported annotation sources` | 目录中有多个 COCO/Label Studio JSON 或 ZIP。只保留一个；备份不要以 `.json` 结尾。 |
+| `directory contains multiple supported annotation sources` | 目录中有多个 YOLO 配置、COCO/Label Studio JSON 或 ZIP，或多种标注源并存。只保留一个有效来源。 |
+| `YOLO label has no corresponding image` | `labels/` 中存在无法按镜像相对路径匹配图片的孤立 TXT。移出该文件或补齐对应图片。 |
+| `YOLO detection label ... must contain exactly five fields` | 输入是分割/OBB/姿态标签或字段数量错误。首版只接受检测框五字段。 |
 | `source image file does not exist` | `file_name` 或 `data.image` 无法从所选数据集根目录解析。改成实际相对路径，例如 `images/00001.jpg`。 |
 | `source directory must contain exactly one COCO annotation file` | 没有找到完整 COCO 对象，或找到多个包含 `images`、`annotations`、`categories` 的 JSON。 |
 | `bbox width and height must be positive` | 把 `[x1, y1, x2, y2]` 误当成 COCO bbox，或宽高为 0/负数。转换为 `[x1, y1, x2-x1, y2-y1]`。 |
