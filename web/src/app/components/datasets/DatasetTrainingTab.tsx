@@ -5,8 +5,34 @@ import { listTrainingRuns, createTrainingRun, checkUnitTrainConnection } from '.
 import type { Dataset, TrainingRun } from '../../../types';
 import { StatusBadge } from '../shared/StatusBadge';
 import { EmptyState, PageLoading } from '../shared/EmptyState';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+
+type TrainingFramework = 'ultralytics' | 'rfdetr';
+
+const MODEL_OPTIONS: Record<TrainingFramework, Record<Dataset['taskType'], readonly string[]>> = {
+  ultralytics: {
+    detection: ['yolo11n', 'yolo11s', 'yolo11m', 'yolo11l', 'yolo11x'],
+    instance_segmentation: [
+      'yolo11n-seg',
+      'yolo11s-seg',
+      'yolo11m-seg',
+      'yolo11l-seg',
+      'yolo11x-seg',
+    ],
+  },
+  rfdetr: {
+    detection: ['nano'],
+    instance_segmentation: ['seg-nano'],
+  },
+};
 
 function formatDuration(seconds: number): string {
   if (seconds === 0) return '—';
@@ -15,7 +41,7 @@ function formatDuration(seconds: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function CreateTrainingDialog({
+export function CreateTrainingDialog({
   open, onOpenChange, dataset, onCreated,
 }: { open: boolean; onOpenChange: (o: boolean) => void; dataset: Dataset; onCreated: () => void }) {
   const immutableVersions = dataset.versions.filter(v => v.isImmutable);
@@ -23,9 +49,8 @@ function CreateTrainingDialog({
     dataset.currentVersionId ?? immutableVersions[0]?.id ?? '',
   );
   const taskType = dataset.taskType;
-  const [model, setModel] = useState(
-    taskType === 'detection' ? 'yolo11n' : 'yolo11n-seg',
-  );
+  const [framework, setFramework] = useState<TrainingFramework>('ultralytics');
+  const [model, setModel] = useState(MODEL_OPTIONS.ultralytics[taskType][0]);
   const [batchSize, setBatchSize] = useState('16');
   const [epochs, setEpochs] = useState('100');
   const [loading, setLoading] = useState(false);
@@ -33,6 +58,13 @@ function CreateTrainingDialog({
 
   const selectedVersion = immutableVersions.find(version => version.id === versionId);
   const runName = `${dataset.name}-${taskType === 'detection' ? 'det' : 'inst'}-${selectedVersion?.version ?? 'version'}-run${Date.now().toString().slice(-4)}`;
+  const modelOptions = MODEL_OPTIONS[framework][taskType];
+
+  const handleFrameworkChange = (value: string) => {
+    const nextFramework = value as TrainingFramework;
+    setFramework(nextFramework);
+    setModel(MODEL_OPTIONS[nextFramework][taskType][0]);
+  };
 
   const handleCreate = async () => {
     setLoading(true);
@@ -43,7 +75,7 @@ function CreateTrainingDialog({
         datasetId: dataset.id,
         datasetVersionId: versionId,
         config: {
-          framework: 'ultralytics',
+          framework,
           model,
           batch_size: Number(batchSize),
           epochs: Number(epochs),
@@ -63,12 +95,15 @@ function CreateTrainingDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>提交训练任务</DialogTitle>
+          <DialogDescription className="sr-only">
+            选择不可变数据集版本、训练框架、模型和训练参数。
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1.5">数据集版本（不可变）</label>
             <Select value={versionId} onValueChange={setVersionId}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9" aria-label="数据集版本"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {immutableVersions.map(v => (
                   <SelectItem key={v.id} value={v.id}>
@@ -84,16 +119,25 @@ function CreateTrainingDialog({
               {taskType === 'detection' ? 'Detection' : 'Instance Segmentation'}
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">框架</label>
+              <Select value={framework} onValueChange={handleFrameworkChange}>
+                <SelectTrigger className="h-8 text-sm" aria-label="框架"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ultralytics">Ultralytics</SelectItem>
+                  <SelectItem value="rfdetr">RF-DETR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">模型</label>
               <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-8 text-sm" aria-label="模型"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {taskType === 'detection'
-                    ? ['yolo11n', 'yolo11s', 'yolo11m', 'yolo11l', 'yolo11x'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)
-                    : ['yolo11n-seg', 'yolo11s-seg', 'yolo11m-seg', 'yolo11l-seg', 'yolo11x-seg'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)
-                  }
+                  {modelOptions.map(option => (
+                    <SelectItem key={option} value={option}>{option}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -103,6 +147,8 @@ function CreateTrainingDialog({
                 value={batchSize}
                 onChange={e => setBatchSize(e.target.value)}
                 type="number"
+                aria-label="Batch Size"
+                min="1"
                 className="w-full h-8 px-2.5 text-sm border border-gray-200 rounded outline-none focus:border-blue-400"
               />
             </div>
@@ -112,6 +158,8 @@ function CreateTrainingDialog({
                 value={epochs}
                 onChange={e => setEpochs(e.target.value)}
                 type="number"
+                aria-label="Epochs"
+                min="1"
                 className="w-full h-8 px-2.5 text-sm border border-gray-200 rounded outline-none focus:border-blue-400"
               />
             </div>

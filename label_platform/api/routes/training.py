@@ -511,7 +511,7 @@ def _map_models(
                 category_metrics=category_metrics,
                 categories=categories,
                 file_size=model.size_bytes,
-                file_path=model.relative_path,
+                file_path=model.absolute_path,
                 evaluation_files=model.evaluation_files,
                 evaluation_links=[
                     {

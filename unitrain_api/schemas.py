@@ -131,6 +131,7 @@ class ModelRecord(BaseModel):
     framework: str
     task_type: str
     relative_path: str
+    absolute_path: str
     size_bytes: int
     created_at: datetime
     metrics: dict[str, float] = Field(default_factory=dict)

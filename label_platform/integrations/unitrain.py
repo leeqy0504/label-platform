@@ -53,6 +53,7 @@ class UnitTrainModel:
     framework: str
     task_type: str
     relative_path: str
+    absolute_path: str
     size_bytes: int
     created_at: datetime
     metrics: dict[str, float]
@@ -243,6 +244,7 @@ class RestUnitTrainConnector:
             framework=self._string(payload, "framework"),
             task_type=self._string(payload, "task_type"),
             relative_path=self._string(payload, "relative_path"),
+            absolute_path=self._string(payload, "absolute_path"),
             size_bytes=self._integer(payload, "size_bytes"),
             created_at=self._datetime(payload, "created_at"),
             metrics=self._metrics(payload.get("metrics")),

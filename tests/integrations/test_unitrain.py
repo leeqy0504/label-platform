@@ -103,6 +103,7 @@ def model_payload():
         "framework": "ultralytics",
         "task_type": "detection",
         "relative_path": "artifacts/train/weights/best.pt",
+        "absolute_path": "/srv/unitrain/runs/run-1/artifacts/train/weights/best.pt",
         "size_bytes": 100,
         "created_at": "2026-07-16T02:00:00Z",
         "metrics": {"mAP50": 0.75},

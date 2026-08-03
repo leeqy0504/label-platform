@@ -10,6 +10,12 @@ class ResizeObserverMock implements ResizeObserver {
 }
 
 globalThis.ResizeObserver = ResizeObserverMock;
+Object.defineProperties(HTMLElement.prototype, {
+  hasPointerCapture: { value: () => false },
+  releasePointerCapture: { value: () => undefined },
+  scrollIntoView: { value: () => undefined },
+  setPointerCapture: { value: () => undefined },
+});
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({

@@ -201,7 +201,7 @@ def _assign_splits(
 ) -> dict[str, tuple[str, ...]]:
     groups: dict[str, list[SourceImage]] = {}
     for image in images:
-        group = image.group_key or image.sample_key
+        group = image.group_key or _relative_path_split_key(image.relative_path)
         groups.setdefault(group, []).append(image)
 
     assignments: dict[str, str] = {}
@@ -217,6 +217,10 @@ def _assign_splits(
     for group, group_images in groups.items():
         members[assignments[group]].extend(image.sample_key for image in group_images)
     return {name: tuple(sorted(members[name])) for name in SPLIT_NAMES}
+
+
+def _relative_path_split_key(relative_path: str) -> str:
+    return hashlib.sha256(f"path\0{relative_path}".encode("utf-8")).hexdigest()
 
 
 def _hashed_split(group: str, seed: int, ratios: dict[str, float]) -> str:

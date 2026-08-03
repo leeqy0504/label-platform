@@ -173,7 +173,7 @@ dataset/
 
 1. 点击“在 Label Studio 中打开”。
 
-2. 首次打开，使用 Label Studio 账号登录，后续会自动登录（账号：std@std.com 密码：123123123）
+2. **新浏览器首次访问 Label Studio 时，输入账号：std@std.com 密码：123123123 登录。**
 
 3. 修改、增加或删除目标框/分割标注。
 
@@ -216,7 +216,7 @@ dataset/
 - 数据集状态是“可训练”。
 - 至少存在一个不可变版本。
 
-当前页面使用 Ultralytics 框架，并根据任务类型提供 YOLO 检测或实例分割模型选项。
+训练页面可选择 Ultralytics 或 RF-DETR。实例分割可使用 YOLO `*-seg` 模型或 RF-DETR `seg-nano`；平台会根据框架自动选择 YOLO polygon 或原始 COCO RLE 输入。
 
 ### 9.2 训练详情
 

@@ -373,6 +373,7 @@ PLATFORM_UNITRAIN_API_TOKEN=<second-random-value>
 UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090
 
 SOURCE_DATA_PATH=./var/sources
+TEST_SOURCE_DATA_PATH=./data
 MANAGED_DATA_PATH=./var/managed
 JOB_LOG_PATH=./var/logs/jobs
 LABEL_STUDIO_EXPORT_PATH=./var/labelstudio/exports
@@ -382,6 +383,8 @@ UNITRAIN_RUN_PATH=./var/unitrain/runs
 ```
 
 `PLATFORM_LABEL_STUDIO_URL` 与 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 用途不同：前者必须能从 API/worker 容器访问，后者必须能从操作者的浏览器访问。平台 Web 容器默认监听 `0.0.0.0:8080`，同一局域网可直接打开 `http://10.10.16.58:8080`，根地址会自动进入 `/datasets`。服务器 IP 变化时，应同步修改 `PLATFORM_LABEL_STUDIO_PUBLIC_URL` 并重新创建 API 和 worker 容器。
+
+`TEST_SOURCE_DATA_PATH` 会只读挂载到 API/worker 的 `/data/test-sources`。例如设置为仓库内的绝对 `data/` 路径后，应在平台中添加 `/data/test-sources` 作为允许根目录，而不是填写宿主机路径。
 
 ### 2. 准备持久化目录
 
@@ -648,6 +651,8 @@ find var/unitrain/runs -maxdepth 2 -name run.log -print
 ```
 
 平台正式数据集仍保存在 `var/managed/<dataset-id>/versions/vN`。提交训练时会生成只读派生包 `var/unitrain/exports/<version-id>/unitrain-coco-split-v1`，原生 UnitTrain 只读取派生包，不修改正式版本。
+
+实例分割训练可在数据集训练页选择 Ultralytics 或 RF-DETR。Ultralytics 会在对应 run 的 `prepared/yolo` 中把只读 COCO 导出的 RLE 掩码转换为 YOLO polygon；临时 JSON 和转换结果均写入 run 目录。RF-DETR 直接读取 COCO RLE，不生成 YOLO 副本。
 
 ## Backup and restore
 

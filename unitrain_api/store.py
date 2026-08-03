@@ -215,6 +215,7 @@ class RunStore:
                     framework=run.framework,
                     task_type=run.task_type,
                     relative_path=relative,
+                    absolute_path=str(path.resolve()),
                     size_bytes=stat.st_size,
                     created_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                     metrics=metrics,

@@ -105,6 +105,7 @@ class FakeUnitTrainConnector:
             framework="ultralytics",
             task_type="detection",
             relative_path="artifacts/train/weights/best.pt",
+            absolute_path="/srv/unitrain/runs/remote-run-1/artifacts/train/weights/best.pt",
             size_bytes=1024,
             created_at=datetime.now(timezone.utc),
             metrics={"mAP50": 0.82, "mAP50_95": 0.61, "precision": 0.8, "recall": 0.7},
@@ -222,6 +223,9 @@ def test_training_api_submits_ready_version_and_proxies_outputs(
     assert logs.json()["lines"] == ["epoch 3/10"]
     assert metrics.json()["history"][0]["epoch"] == 3
     assert models.json()["data"][0]["training_run_id"] == run_id
+    assert models.json()["data"][0]["file_path"] == (
+        "/srv/unitrain/runs/remote-run-1/artifacts/train/weights/best.pt"
+    )
     assert model.json()["category_metrics"][0]["category"] == "cargo"
     assert artifact.content == b"report"
     assert health.json() == {"status": "online", "version": "1.0.0"}

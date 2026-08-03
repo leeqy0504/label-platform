@@ -13,11 +13,15 @@ import tempfile
 import cv2
 import numpy as np
 import supervision as sv
-import yaml
 from pycocotools import mask as mask_utils
 
 
-def _preprocess_rle_annotations(annotations_path: str, convert_rle: bool = True) -> str:
+def _preprocess_rle_annotations(
+    annotations_path: str,
+    *,
+    temporary_directory: Path,
+    convert_rle: bool = True,
+) -> str:
     """预处理 COCO 标注文件。
     
     - 如果 convert_rle=True：将 RLE 格式转换为 polygon 格式（用于不支持 RLE 的框架如 YOLO）
@@ -26,6 +30,7 @@ def _preprocess_rle_annotations(annotations_path: str, convert_rle: bool = True)
     
     Args:
         annotations_path: COCO JSON 标注文件路径
+        temporary_directory: 可写的临时文件目录
         convert_rle: 是否将 RLE 转换为 polygon，默认 True
         
     Returns:
@@ -125,8 +130,13 @@ def _preprocess_rle_annotations(annotations_path: str, convert_rle: bool = True)
         print(f"  已展平 {flatten_count} 个嵌套 polygon 标注")
     
     if has_changes:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='_temp_annotations.json', 
-                                        delete=False, dir=Path(annotations_path).parent) as f:
+        temporary_directory.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='_temp_annotations.json',
+            delete=False,
+            dir=temporary_directory,
+        ) as f:
             json.dump(coco_data, f)
             return f.name
     
@@ -147,7 +157,11 @@ def _convert_split(
         convert_rle: 是否将 RLE 转换为 polygon。YOLO 需要 True，RF-DETR 可以 False。
     """
     # 预处理标注格式
-    processed_ann_path = _preprocess_rle_annotations(annotations_path, convert_rle=convert_rle)
+    processed_ann_path = _preprocess_rle_annotations(
+        annotations_path,
+        temporary_directory=yolo_root,
+        convert_rle=convert_rle,
+    )
     
     try:
         ds = sv.DetectionDataset.from_coco(

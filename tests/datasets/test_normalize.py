@@ -103,6 +103,39 @@ def test_normalization_is_deterministic_and_keeps_groups_in_one_split(
     assert set(populated[0]) == {image.sample_key for image in source.images}
 
 
+def test_automatic_splits_are_stable_across_dataset_namespaces(image_factory, tmp_path):
+    for index in range(64):
+        image_factory(tmp_path / f"{index:05d}.png")
+    analysis_source = ImageDirectoryAdapter().read(
+        tmp_path,
+        dataset_id="analysis:job-1",
+        categories=["object"],
+    )
+    registration_source = ImageDirectoryAdapter().read(
+        tmp_path,
+        dataset_id="dataset-1",
+        categories=["object"],
+    )
+
+    analysis = normalize_source(analysis_source, split_seed=42)
+    registration = normalize_source(registration_source, split_seed=42)
+
+    def splits_by_relative_path(source, canonical):
+        relative_by_key = {image.sample_key: image.relative_path for image in source.images}
+        return {
+            relative_by_key[sample_key]: split
+            for split, sample_keys in canonical.splits.items()
+            for sample_key in sample_keys
+        }
+
+    assert splits_by_relative_path(analysis_source, analysis) == splits_by_relative_path(
+        registration_source,
+        registration,
+    )
+    assert analysis.manifest["split_counts"] == {"train": 52, "val": 12, "test": 0}
+    assert registration.manifest["split_counts"] == analysis.manifest["split_counts"]
+
+
 def test_normalization_preserves_explicit_split_for_a_group(image_factory, tmp_path):
     image_factory(tmp_path / "a.jpg")
     image_factory(tmp_path / "b.jpg")

@@ -26,6 +26,7 @@ x-platform-service: &platform-service
     - "host.docker.internal:host-gateway"
   volumes:
     - ${SOURCE_DATA_PATH:-./var/sources}:/data/sources:ro
+    - ${TEST_SOURCE_DATA_PATH:-./data}:/data/test-sources:ro
     - ${MANAGED_DATA_PATH:-./var/managed}:/data/managed:rw
     - ${JOB_LOG_PATH:-./var/logs/jobs}:/data/logs/jobs:rw
     - ${LABEL_STUDIO_EXPORT_PATH:-./var/labelstudio/exports}:/data/labelstudio/exports:rw

@@ -106,6 +106,7 @@ def test_manager_persists_run_logs_metrics_and_models(tmp_path):
     assert metrics.history == [{"epoch": 1, "train_loss": 0.4}]
     assert len(models) == 1
     assert manager.store.get_model(models[0].id).relative_path.endswith("best.pt")
+    assert manager.store.get_model(models[0].id).absolute_path == str(model_path.resolve())
     assert manager.store.get_model_artifact(
         models[0].id,
         "artifacts/evaluation/report.md",

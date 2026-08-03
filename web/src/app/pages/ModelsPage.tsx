@@ -9,8 +9,8 @@ import { Pagination } from '../components/shared/Pagination';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 function formatBytes(mb: number): string {
-  if (mb < 1) return `${Math.max(1, Math.round(mb * 1024))} KB`;
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+  if (mb < 1) return `${(mb * 1024).toFixed(2)} KB`;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${mb.toFixed(2)} MB`;
 }
 
 function formatDate(iso: string) {

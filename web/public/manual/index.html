@@ -1301,7 +1301,7 @@
         <ol class="steps">
           <li>在数据集详情中进入<strong>Label Studio 审核</strong>页签，基于当前版本创建审核任务。</li>
           <li>等待任务显示为“就绪”或“审核中”，点击“在 Label Studio 中打开”。</li>
-          <li>新浏览器首次访问 Label Studio 时，使用部门提供的账号登录。</li>
+          <li><strong>新浏览器首次访问 Label Studio 时，输入账号：std@std.com 密码：123123123 登录。</strong></li>
           <li>逐张修改、增加或删除目标框或分割标注，并提交完成的任务。</li>
           <li>回到平台刷新任务，确认完成数量和进度。</li>
           <li>确认全部结果后，点击“结束审核并生成版本”。</li>
@@ -1337,7 +1337,7 @@
           <li>选择包含完整标注的不可变版本。</li>
           <li>确认任务类型、模型、批大小、学习率、图片尺寸和训练轮数。</li>
         </ul>
-        <p>当前训练页面使用 Ultralytics 框架，并根据数据集任务类型提供对应的 YOLO 检测或实例分割模型选项。</p>
+        <p>训练页面可选择 Ultralytics 或 RF-DETR。实例分割可使用 YOLO <code>*-seg</code> 模型或 RF-DETR <code>seg-nano</code>；平台会根据框架自动选择 YOLO polygon 或原始 COCO RLE 输入。</p>
 
         <h3>训练详情</h3>
         <p>训练详情页集中显示运行状态、Loss 曲线、mAP 指标、训练参数和实时日志。运行中的任务可以停止；提交阶段失败且还没有创建 UnitTrain Run 时，可以执行“重试提交”。</p>

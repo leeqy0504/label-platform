@@ -143,7 +143,7 @@ export default function ModelDetailPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">文件大小</span>
-                <span className="text-gray-700">{model.fileSize} MB</span>
+                <span className="text-gray-700">{model.fileSize.toFixed(2)} MB</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">类别数</span>
