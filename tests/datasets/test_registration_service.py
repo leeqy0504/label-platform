@@ -59,8 +59,8 @@ def test_registration_persists_ready_v1_and_items(
     assert version.parent_id is None
     assert version.item_count == 2
     assert version.root_path == f"{dataset_id}/versions/v1"
-    assert version.manifest_path == "manifest.json"
-    assert version.annotation_path == "annotations/instances.coco.json"
+    assert version.manifest_path == "version.json"
+    assert version.annotation_path == "version.json"
     assert version.class_schema == [{"id": 1, "name": "cargo"}]
     assert version.category_counts == {"1": 0}
     assert version.validation_result["valid"] is True

@@ -89,7 +89,7 @@ YOLO 导入约束：
 - 每个图片目录从其同级 `labels/` 读取镜像相对路径的 `.txt`。缺失或空 TXT 表示未标注图片；没有对应图片的孤立 TXT 会使分析失败。
 - 每个非空标注行必须是 `class cx cy width height` 五个字段。坐标必须是有限的 YOLO 归一化值，宽高大于 0，且整个框位于图片范围内；六字段分割、多边形和 OBB 行不受支持。平台仅对六位小数文本造成的最大 `1e-6` 边界量化误差做边界吸附并保持原宽高，更大的越界不会被裁剪。
 - 平台按真实图片尺寸转换为 COCO `[x, y, width, height]`，类别 ID 从 YOLO `0..N-1` 映射为 COCO `1..N`，并保留未使用类别及原有 train/val/test 切分。
-- 来源目录全程只读。转换后的图片、`manifest.json`、切分文件和 `annotations/instances.coco.json` 只写入平台自己的 `var/managed/<dataset-id>/versions/vN/`。
+- 来源目录全程只读。图片内容按 SHA-256 只保存一次到 `var/managed/.blobs/sha256/`；新版本目录只写入一个 `version.json`，其中包含图片 blob 地址、切分、类别和全部 COCO 标注。
 
 `data.yaml` 和实际消费的 label TXT 不会列为“不支持文件”；`sample_manifest.txt` 等其他文件仍会作为附加文件显示。
 
@@ -340,7 +340,7 @@ UNITRAIN_API_PUBLIC_URL=http://127.0.0.1:8090 \
   uv run unitrain-api
 ```
 
-服务提供 `/runs`、日志、指标、停止和模型查询接口。真正提交训练前，仍需在 UniTrain 主机上按原项目方式准备 `.venv-yolo` 或 `.venv-rfdetr`；当前电脑无需为平台开发安装它们。平台先将 READY 版本原子物化为只读 `unitrain-coco-split-v1` 派生包，再通过 REST 提交，canonical 版本不会被训练进程修改。
+服务提供 `/runs`、日志、指标、停止和模型查询接口。真正提交训练前，仍需在 UniTrain 主机上按原项目方式准备 `.venv-yolo` 或 `.venv-rfdetr`。平台从 READY 版本生成只读 `unitrain-coco-split-v1` 派生包，其中图片均为指向 blob 的符号链接，COCO JSON 单独生成，正式版本不会被训练进程修改。
 
 ## 新服务器 Compose 部署
 
@@ -403,7 +403,6 @@ mkdir -p \
 
 ```bash
 docker compose --profile integrations --profile unitrain build
-docker compose --profile integrations pull label-studio
 ```
 
 没有 `sudo` 时，使用一次性 root 容器设置挂载目录权限。平台目录属于镜像内的 `platform` 用户，Label Studio 数据目录属于 UID/GID 1001：
@@ -650,9 +649,18 @@ tail -n 200 var/unitrain/unitrain-api.log
 find var/unitrain/runs -maxdepth 2 -name run.log -print
 ```
 
-平台正式数据集仍保存在 `var/managed/<dataset-id>/versions/vN`。提交训练时会生成只读派生包 `var/unitrain/exports/<version-id>/unitrain-coco-split-v1`，原生 UnitTrain 只读取派生包，不修改正式版本。
+平台正式版本保存在 `var/managed/<dataset-id>/versions/vN/version.json`，图片保存在共享 blob 库。提交训练时会生成 `var/unitrain/exports/<version-id>/unitrain-coco-split-v1` 符号链接视图，原生 UnitTrain 只读取派生包。
 
-实例分割训练可在数据集训练页选择 Ultralytics 或 RF-DETR。Ultralytics 会在对应 run 的 `prepared/yolo` 中把只读 COCO 导出的 RLE 掩码转换为 YOLO polygon；临时 JSON 和转换结果均写入 run 目录。RF-DETR 直接读取 COCO RLE，不生成 YOLO 副本。
+实例分割训练可在数据集训练页选择 Ultralytics 或 RF-DETR。Ultralytics 只在 run 的 `prepared/yolo` 中生成 YOLO TXT 和 `data.yaml`，`images/train|val|test` 链接到只读 COCO export；RF-DETR 直接读取 COCO RLE。完成或停止任务立即清理 `prepared/`，失败任务默认保留 24 小时，可通过 `UNITRAIN_API_FAILED_PREPARED_RETENTION_HOURS` 调整。
+
+旧版 managed 数据可先预览再迁移：
+
+```bash
+uv run label-platform migrate-version-storage --dry-run
+uv run label-platform migrate-version-storage
+```
+
+迁移会生成并校验 blob 和 `version.json` 后再删除旧版本中的实体图片；来源数据集和预训练权重不受影响。
 
 ## Backup and restore
 
@@ -688,7 +696,7 @@ PLATFORM_INTEGRATION_DATABASE_URL=postgresql+psycopg://platform:platform-dev-pas
   uv run pytest -m integration tests/integration/test_register_dataset.py -v
 ```
 
-该测试通过 Redis/RQ 分别执行分析和登记作业，发布 10 张图片的 `platform-coco-v1` 不可变 v1，并验证幂等重提不会创建第二个作业。
+该测试通过 Redis/RQ 分别执行分析和登记作业，发布 10 张图片的 `platform-dataset-v2` 不可变 v1，并验证幂等重提不会创建第二个作业。
 
 ## Production requirements
 

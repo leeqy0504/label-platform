@@ -32,7 +32,7 @@ export function FormatSplitsTab({ dataset }: { dataset: Dataset }) {
         <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
           <FormatValue icon={FolderOpen} label="来源格式" value={dataset.sourceFormat ? SOURCE_FORMAT_LABEL[dataset.sourceFormat] : '—'} />
           <FormatValue icon={Layers3} label="任务类型" value={TASK_TYPE_LABEL[dataset.taskType]} />
-          <FormatValue icon={FileJson2} label="规范格式" value="platform-coco-v1" mono />
+          <FormatValue icon={FileJson2} label="规范格式" value="platform-dataset-v2" mono />
           <FormatValue icon={FileJson2} label="标注文件" value="annotations/instances.coco.json" mono />
         </dl>
         {dataset.rootPath && (

@@ -1,21 +1,20 @@
 import copy
-import hashlib
 import json
 import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
 
-from PIL import Image, ImageOps
-
-from label_platform.datasets.contracts import SourceImage
-from label_platform.datasets.normalize import CanonicalVersion, SPLIT_NAMES
+from label_platform.datasets.blobs import BlobStore
+from label_platform.datasets.normalize import CanonicalVersion
 from label_platform.datasets.validate import ValidationReport, validate_canonical
-
-
-class CloneFile(Protocol):
-    def __call__(self, source: Path, destination: Path) -> object: ...
+from label_platform.datasets.versioning import (
+    PLATFORM_DATASET_FORMAT,
+    VERSION_FILE_NAME,
+    build_version_document,
+    load_version_document,
+    resolve_version_image,
+)
 
 
 class DatasetPublicationError(RuntimeError):
@@ -79,44 +78,23 @@ class DatasetPublisher:
             if staging.exists() or staging.is_symlink():
                 self._remove_tree(staging)
             staging.mkdir()
-            (staging / "images").mkdir()
-            (staging / "annotations").mkdir()
-            (staging / "splits").mkdir()
 
-            self._materialize_images(published, staging)
-            annotation_path = staging / "annotations" / "instances.coco.json"
-            self._write_json(annotation_path, published.coco)
-            split_paths: list[Path] = []
-            for split in SPLIT_NAMES:
-                split_path = staging / "splits" / f"{split}.txt"
-                self._write_split(split_path, published.splits[split])
-                split_paths.append(split_path)
-
-            report = validate_canonical(
-                published,
-                frozen_schema=frozen_schema,
-                version_root=staging,
-            )
-            if not report.valid:
-                raise DatasetPublicationError(
-                    "staged dataset failed validation",
-                    validation_report=report,
-                )
+            self._ingest_images(published)
+            report = initial_report
+            published.manifest["format"] = PLATFORM_DATASET_FORMAT
             published.manifest["validation_result"] = report.as_dict()
-            published.manifest["artifacts"] = {
-                annotation_path.relative_to(staging).as_posix(): {
-                    "sha256": _sha256(annotation_path),
-                    "size": annotation_path.stat().st_size,
-                },
-                **{
-                    path.relative_to(staging).as_posix(): {
-                        "sha256": _sha256(path),
-                        "size": path.stat().st_size,
-                    }
-                    for path in split_paths
-                },
-            }
-            self._write_json(staging / "manifest.json", published.manifest)
+            document = build_version_document(published)
+            self._write_json(staging / VERSION_FILE_NAME, document)
+            stored = load_version_document(staging, manifest_path=VERSION_FILE_NAME)
+            for image in stored.coco["images"]:
+                if not isinstance(image, dict):
+                    raise DatasetPublicationError("stored version image is invalid")
+                resolve_version_image(
+                    self.managed_root,
+                    staging,
+                    image,
+                    verify_blob=True,
+                )
             self._make_immutable(staging)
             os.replace(staging, final)
             final_created = True
@@ -174,10 +152,11 @@ class DatasetPublisher:
         )
         os.replace(temporary, latest)
 
-    def _materialize_images(self, canonical: CanonicalVersion, staging: Path) -> None:
+    def _ingest_images(self, canonical: CanonicalVersion) -> None:
         files = canonical.manifest.get("files")
         if not isinstance(files, dict):
             raise DatasetPublicationError("canonical manifest file inventory is invalid")
+        blob_store = BlobStore(self.managed_root)
         for image in canonical.coco["images"]:
             if not isinstance(image, dict):
                 raise DatasetPublicationError("canonical image entry is invalid")
@@ -186,53 +165,15 @@ class DatasetPublisher:
             if not isinstance(sample_key, str) or not isinstance(file_name, str):
                 raise DatasetPublicationError("canonical image identity is invalid")
             source = canonical.source_images[sample_key]
-            destination = staging / file_name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            self._materialize_image(source, destination)
-            if _sha256(source.source_path) != source.sha256:
-                raise DatasetPublicationError(
-                    f"source image changed during publication: {source.relative_path}"
-                )
+            blob = blob_store.ingest(source)
             metadata = files.get(file_name)
             if not isinstance(metadata, dict):
                 raise DatasetPublicationError(f"manifest metadata is missing for {file_name}")
-            metadata["sha256"] = _sha256(destination)
-            metadata["size"] = destination.stat().st_size
-
-    def _materialize_image(self, source: SourceImage, destination: Path) -> None:
-        try:
-            with Image.open(source.source_path) as opened:
-                orientation = opened.getexif().get(274, 1)
-                if orientation != 1:
-                    normalized = ImageOps.exif_transpose(opened)
-                    normalized.load()
-                    image_format = opened.format
-                    if image_format is None:
-                        raise DatasetPublicationError(
-                            f"cannot determine image format: {source.relative_path}"
-                        )
-                    normalized.save(destination, format=image_format)
-                    return
-        except DatasetPublicationError:
-            raise
-        except OSError as exc:
-            raise DatasetPublicationError(
-                f"cannot materialize image: {source.relative_path}"
-            ) from exc
-        self._copy_file(source.source_path, destination)
-
-    @staticmethod
-    def _copy_file(source: Path, destination: Path) -> None:
-        clonefile = getattr(os, "clonefile", None)
-        if callable(clonefile):
-            try:
-                cast(CloneFile, clonefile)(source, destination)
-                shutil.copystat(source, destination, follow_symlinks=False)
-                return
-            except OSError:
-                if destination.exists():
-                    destination.unlink()
-        shutil.copy2(source, destination, follow_symlinks=False)
+            metadata["sha256"] = blob.sha256
+            metadata["size"] = blob.size
+            image["sha256"] = blob.sha256
+            image["image_uri"] = blob.uri
+            image["file_size"] = blob.size
 
     @staticmethod
     def _write_json(path: Path, payload: object) -> None:
@@ -244,11 +185,6 @@ class DatasetPublisher:
             allow_nan=False,
         )
         path.write_text(f"{serialized}\n", encoding="utf-8")
-
-    @staticmethod
-    def _write_split(path: Path, members: tuple[str, ...]) -> None:
-        content = "".join(f"{member}\n" for member in members)
-        path.write_text(content, encoding="utf-8")
 
     @staticmethod
     def _make_immutable(root: Path) -> None:
@@ -270,11 +206,3 @@ class DatasetPublisher:
                 child.chmod(0o644)
         path.chmod(0o755)
         shutil.rmtree(path)
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()

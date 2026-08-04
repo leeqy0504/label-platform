@@ -1,5 +1,7 @@
 from dataclasses import replace
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -53,6 +55,10 @@ def test_unitrain_export_is_separate_atomic_immutable_and_idempotent(image_facto
     assert (first.root / "export-manifest.json").stat().st_mode & 0o222 == 0
     exported_names = [path.name for path in first.root.rglob("*.jpg")]
     assert len(exported_names) == len(set(exported_names)) == 2
+    assert all(path.is_symlink() for path in first.root.rglob("*.jpg"))
+    assert all(
+        not Path(os.readlink(path)).is_absolute() for path in first.root.rglob("*.jpg")
+    )
     for split in ("train", "valid", "test"):
         coco = json.loads(
             (first.root / split / "_annotations.coco.json").read_text(encoding="utf-8")
@@ -60,17 +66,39 @@ def test_unitrain_export_is_separate_atomic_immutable_and_idempotent(image_facto
         assert all("/" not in image["file_name"] for image in coco["images"])
 
 
+def test_unitrain_export_repairs_legacy_absolute_image_links(image_factory, tmp_path):
+    version_root = publish_version(image_factory, tmp_path)
+    exporter = UnitTrainExporter(tmp_path / "exports")
+    first = exporter.materialize(version_root, version_id="version-1")
+    image_link = next(first.root.rglob("*.jpg"))
+    expected = image_link.resolve(strict=True)
+    parent_mode = image_link.parent.stat().st_mode & 0o777
+    image_link.parent.chmod(0o755)
+    try:
+        image_link.unlink()
+        image_link.symlink_to(expected)
+    finally:
+        image_link.parent.chmod(parent_mode)
+
+    exporter.materialize(version_root, version_id="version-1")
+
+    assert image_link.is_symlink()
+    assert not Path(os.readlink(image_link)).is_absolute()
+    assert image_link.resolve(strict=True) == expected
+
+
 def test_unitrain_export_rejects_split_overlap_without_exposing_partial_output(
     image_factory,
     tmp_path,
 ):
     version_root = publish_version(image_factory, tmp_path)
-    train = version_root / "splits" / "train.txt"
-    val = version_root / "splits" / "val.txt"
-    train.chmod(0o644)
-    train.write_text(val.read_text(encoding="utf-8"), encoding="utf-8")
+    version_json = version_root / "version.json"
+    version_json.chmod(0o644)
+    document = json.loads(version_json.read_text(encoding="utf-8"))
+    document["images"][0]["split"] = "unknown"
+    version_json.write_text(json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(UnitTrainExportError, match="cover every sample|overlaps"):
+    with pytest.raises(UnitTrainExportError, match="invalid image split"):
         UnitTrainExporter(tmp_path / "exports").materialize(
             version_root,
             version_id="version-1",

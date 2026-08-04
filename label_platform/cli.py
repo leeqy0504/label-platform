@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from redis import Redis
 from rq import Queue, SimpleWorker, Worker
 from label_platform.config import Settings
+from label_platform.datasets.storage_migration import migrate_version_storage
 from label_platform.db.session import create_engine_from_settings, create_session_factory
 from label_platform.integrations.labelstudio import create_label_studio_connector
 from label_platform.integrations.unitrain import create_unitrain_connector
@@ -25,6 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run jobs in-process (recommended for native macOS development)",
     )
     subparsers.add_parser("reconcile", help="Reconcile active external sessions and runs")
+    migrate = subparsers.add_parser(
+        "migrate-version-storage",
+        help="Migrate managed dataset versions to blob-backed version.json storage",
+    )
+    migrate.add_argument("--dry-run", action="store_true", help="Report changes without writing")
     return parser
 
 
@@ -67,5 +73,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         finally:
             label_studio.close()
             unitrain.close()
+            engine.dispose()
+    if args.command == "migrate-version-storage":
+        from unitrain_api.cleanup import cleanup_prepared_runs
+        from unitrain_api.config import UnitTrainAPISettings
+
+        settings = Settings()
+        engine = create_engine_from_settings(settings)
+        try:
+            session_factory = create_session_factory(engine)
+            migration_result = migrate_version_storage(
+                session_factory,
+                managed_root=settings.managed_data_root,
+                export_root=settings.unitrain_export_root,
+                dry_run=bool(args.dry_run),
+            )
+            prepared_removed = (
+                0 if args.dry_run else cleanup_prepared_runs(UnitTrainAPISettings())
+            )
+            print(
+                json.dumps(
+                    {**migration_result.as_dict(), "prepared_removed": prepared_removed},
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        finally:
             engine.dispose()
     return 2

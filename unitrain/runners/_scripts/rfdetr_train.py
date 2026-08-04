@@ -2,7 +2,6 @@
 """RF-DETR training script — executed in .venv-rfdetr."""
 
 import argparse
-import importlib
 import json
 import os
 import shutil

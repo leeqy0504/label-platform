@@ -1,6 +1,5 @@
 """UniTrain - Common utilities shared across all framework runners."""
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,7 +39,6 @@ def find_latest_checkpoint(output_dir: str | Path, pattern: str = "checkpoint*.p
         Path to latest checkpoint or None if not found
     """
     from pathlib import Path
-    import glob
     
     checkpoints = list(Path(output_dir).glob(pattern))
     if not checkpoints:

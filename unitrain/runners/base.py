@@ -3,12 +3,10 @@
 import json
 import os
 import subprocess
-import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from ..utils import get_timestamped_output_dir
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 _SCRIPTS_DIR = Path(__file__).parent / "_scripts"

@@ -121,7 +121,7 @@ class RFDETRRunner(BaseRunner):
 
         result = self._run_script_file("rfdetr_predict.py", script_config)
         if result.returncode != 0:
-            print(f"[RF-DETR] Prediction failed", file=sys.stderr)
+            print("[RF-DETR] Prediction failed", file=sys.stderr)
             raise RuntimeError("Prediction failed")
         return result.stdout
 
@@ -141,7 +141,7 @@ class RFDETRRunner(BaseRunner):
 
         result = self._run_script_file("rfdetr_export.py", script_config)
         if result.returncode != 0:
-            print(f"[RF-DETR] Export failed", file=sys.stderr)
+            print("[RF-DETR] Export failed", file=sys.stderr)
             raise RuntimeError("Export failed")
         return Path(output_path)
 

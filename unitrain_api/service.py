@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 import sys
 from threading import Lock, Thread
 from uuid import uuid4
@@ -34,10 +35,12 @@ class RunManager:
         self._lock = Lock()
         self._handles: dict[str, ProcessHandle] = {}
         self._recover_active_runs()
+        self._cleanup_terminal_prepared()
 
     def create_run(self, payload: CreateRunRequest) -> RunRecord:
         self._validate_paths(payload)
         with self._lock:
+            self._cleanup_terminal_prepared()
             if payload.idempotency_key is not None:
                 existing = self.store.find_by_idempotency_key(payload.idempotency_key)
                 if existing is not None:
@@ -107,9 +110,11 @@ class RunManager:
             return record
 
     def get_run(self, run_id: str) -> RunRecord:
+        self._cleanup_terminal_prepared()
         return self._refresh_metrics(self.store.get(run_id))
 
     def list_runs(self) -> list[RunRecord]:
+        self._cleanup_terminal_prepared()
         return [self._refresh_metrics(run) for run in self.store.list_runs()]
 
     def stop_run(self, run_id: str) -> RunRecord:
@@ -128,6 +133,7 @@ class RunManager:
             record.error = None
             self.store.save(record)
             self._handles.pop(run_id, None)
+            self._cleanup_prepared(record)
             return record
 
     def _monitor(self, run_id: str, handle: ProcessHandle) -> None:
@@ -149,17 +155,17 @@ class RunManager:
                     else "Training process exited without a result"
                 )
             self.store.save(self._refresh_metrics(record))
+            self._cleanup_prepared(record)
 
     def _refresh_metrics(self, record: RunRecord) -> RunRecord:
         metrics = self.store.read_metrics(record.id)
         if metrics.summary != record.metric_summary:
             record.metric_summary = metrics.summary
-        history_epochs = [
-            item.get("epoch")
-            for item in metrics.history
-            if isinstance(item.get("epoch"), int)
-            and not isinstance(item.get("epoch"), bool)
-        ]
+        history_epochs: list[int] = []
+        for item in metrics.history:
+            epoch = item.get("epoch")
+            if isinstance(epoch, int) and not isinstance(epoch, bool):
+                history_epochs.append(epoch)
         if history_epochs:
             record.current_epoch = max(record.current_epoch, max(history_epochs))
         inferred = self.store.infer_epoch(record.id)
@@ -195,6 +201,25 @@ class RunManager:
                 name=f"unitrain-recovered-{record.id}",
                 daemon=True,
             ).start()
+
+    def _cleanup_terminal_prepared(self) -> None:
+        for record in self.store.list_runs():
+            self._cleanup_prepared(record)
+
+    def _cleanup_prepared(self, record: RunRecord) -> None:
+        remove = record.status in {RunStatus.COMPLETED, RunStatus.STOPPED}
+        if record.status is RunStatus.FAILED and record.completed_at is not None:
+            age_hours = (
+                datetime.now(timezone.utc) - record.completed_at
+            ).total_seconds() / 3600
+            remove = age_hours >= self.settings.failed_prepared_retention_hours
+        if not remove:
+            return
+        prepared = self.store.run_dir(record.id) / "prepared"
+        if prepared.is_symlink() or prepared.is_file():
+            prepared.unlink(missing_ok=True)
+        elif prepared.is_dir():
+            shutil.rmtree(prepared)
 
     @staticmethod
     def _validate_paths(payload: CreateRunRequest) -> None:

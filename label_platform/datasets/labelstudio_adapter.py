@@ -40,16 +40,21 @@ class LabelStudioExportAdapter:
         media_root: Path,
         dataset_id: str,
         categories: list[str],
+        source_images_by_sample: dict[str, SourceImage] | None = None,
     ) -> SourceDataset:
-        try:
-            resolved_root = resolve_approved_root(media_root)
-        except SourcePathError as exc:
-            raise SourceFormatError(str(exc)) from exc
+        if source_images_by_sample is None:
+            try:
+                resolved_root = resolve_approved_root(media_root)
+            except SourcePathError as exc:
+                raise SourceFormatError(str(exc)) from exc
+        else:
+            resolved_root = media_root
         return self._read_native(
             tasks,
             media_root=resolved_root,
             dataset_id=dataset_id,
             frozen_categories=categories,
+            source_images_by_sample=source_images_by_sample,
         )
 
     def read(
@@ -173,6 +178,7 @@ class LabelStudioExportAdapter:
         media_root: Path,
         dataset_id: str,
         frozen_categories: list[str] | None,
+        source_images_by_sample: dict[str, SourceImage] | None = None,
     ) -> SourceDataset:
         selected_results: list[list[dict[str, object]]] = []
         discovered_categories: list[str] = []
@@ -206,21 +212,36 @@ class LabelStudioExportAdapter:
             data = task.get("data")
             if not isinstance(data, dict) or not isinstance(data.get("image"), str):
                 raise SourceFormatError(f"Label Studio task at index {index} has no image reference")
-            image_path = self._resolve_media_reference(media_root, data["image"])
-            relative_path = image_path.relative_to(media_root).as_posix()
+            trusted_sample_key = data.get("sample_key")
+            trusted_image = (
+                source_images_by_sample.get(trusted_sample_key)
+                if source_images_by_sample is not None and isinstance(trusted_sample_key, str)
+                else None
+            )
+            if source_images_by_sample is not None and trusted_image is None:
+                raise SourceFormatError(
+                    f"Label Studio task at index {index} has no trusted source image"
+                )
+            if trusted_image is not None:
+                image = trusted_image
+                relative_path = image.relative_path
+            else:
+                image_path = self._resolve_media_reference(media_root, data["image"])
+                relative_path = image_path.relative_to(media_root).as_posix()
             if relative_path in relative_paths:
                 raise SourceFormatError(f"duplicate normalized image path: {relative_path}")
             relative_paths.add(relative_path)
-            image = read_source_image(
-                image_path,
-                root=media_root,
-                dataset_id=dataset_id,
-                relative_path=relative_path,
-                split=self._optional_string(data.get("split")),
-                group_key=self._optional_string(
-                    data.get("group_key") or data.get("episode_id")
-                ),
-            )
+            if trusted_image is None:
+                image = read_source_image(
+                    image_path,
+                    root=media_root,
+                    dataset_id=dataset_id,
+                    relative_path=relative_path,
+                    split=self._optional_string(data.get("split")),
+                    group_key=self._optional_string(
+                        data.get("group_key") or data.get("episode_id")
+                    ),
+                )
             images.append(image)
 
             for result in results:

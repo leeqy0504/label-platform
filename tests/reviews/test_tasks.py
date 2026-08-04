@@ -99,5 +99,7 @@ def test_label_config_escapes_categories_and_selects_task_control():
     )
 
     assert "RectangleLabels" in detection
+    assert 'name="image_disposition"' in detection
+    assert "删除图片" in detection
     assert "cargo &amp; &quot;crate&quot;" in detection
     assert "BrushLabels" in segmentation

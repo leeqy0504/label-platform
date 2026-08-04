@@ -103,6 +103,7 @@ def main() -> None:
         project=output_dir,
         name="val",
         exist_ok=True,
+        cache=False,
         plots=True,  # Generate PR curves, confusion matrix, etc.
     )
 
@@ -258,7 +259,7 @@ def main() -> None:
                     "best_conf": float(seg_px[best_idx]),
                     "best_f1": float(full_f1_mean[best_idx]),
                 }
-                print(f"[YOLO Eval] Mask F1-Confidence curve extracted")
+                print("[YOLO Eval] Mask F1-Confidence curve extracted")
         except Exception as e:
             print(f"[YOLO Eval] Warning: could not extract mask curve data: {e}")
 
@@ -322,7 +323,7 @@ def main() -> None:
     print(f"  Recall    = {ov.get('recall', 'N/A'):.4f}")
     print(f"  F1        = {ov.get('f1', 'N/A'):.4f}")
     if is_seg:
-        print(f"  --- Mask ---")
+        print("  --- Mask ---")
         print(f"  Mask mAP@50:95 = {ov.get('mask_mAP50_95', 'N/A'):.4f}")
         print(f"  Mask mAP@50    = {ov.get('mask_mAP50', 'N/A'):.4f}")
         print(f"  Mask F1        = {ov.get('mask_f1', 'N/A'):.4f}")

@@ -1,4 +1,3 @@
-import json
 import math
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
@@ -11,6 +10,12 @@ from sqlalchemy.exc import IntegrityError
 
 from label_platform.api.dependencies import SessionDependency
 from label_platform.datasets.paths import SourcePathError, resolve_source_path
+from label_platform.datasets.blobs import BlobStore, BlobStoreError
+from label_platform.datasets.versioning import (
+    VERSION_FILE_NAME,
+    VersionStorageError,
+    load_version_coco,
+)
 from label_platform.db.models import (
     AllowedRoot,
     AuditEvent,
@@ -476,12 +481,22 @@ def get_item_media(
     )
     if item is None or version.root_path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset item not found")
-    root = request.app.state.settings.managed_data_root / version.root_path
+    managed_root = request.app.state.settings.managed_data_root
+    root = managed_root / version.root_path
     try:
-        resolved_root = root.resolve(strict=True)
         relative = PurePosixPath(item.relative_path)
         if relative.is_absolute() or ".." in relative.parts or "\\" in item.relative_path:
             raise ValueError
+        if version.manifest_path == VERSION_FILE_NAME:
+            media = BlobStore(managed_root).path_for_hash(item.sha256)
+            if not media.is_file() or media.is_symlink():
+                raise ValueError
+            return FileResponse(
+                media,
+                media_type=item.media_type,
+                filename=Path(item.relative_path).name,
+            )
+        resolved_root = root.resolve(strict=True)
         candidate = resolved_root / relative
         cursor = resolved_root
         for part in relative.parts:
@@ -491,7 +506,7 @@ def get_item_media(
         media = candidate.resolve(strict=True)
         if not media.is_relative_to(resolved_root) or not media.is_file():
             raise ValueError
-    except (OSError, ValueError):
+    except (BlobStoreError, OSError, ValueError):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset media not found") from None
     return FileResponse(media, media_type=item.media_type, filename=Path(item.relative_path).name)
 
@@ -620,32 +635,27 @@ def _bbox_annotations_by_sample(
     version: DatasetVersion,
     sample_keys: set[str],
 ) -> dict[str, list[dict[str, object]]]:
-    if not sample_keys or version.root_path is None or version.annotation_path is None:
+    if not sample_keys or version.root_path is None:
         return {}
 
     try:
         resolved_managed_root = managed_root.resolve(strict=True)
         version_relative = PurePosixPath(version.root_path)
-        annotation_relative = PurePosixPath(version.annotation_path)
         if (
             version_relative.is_absolute()
-            or annotation_relative.is_absolute()
             or ".." in version_relative.parts
-            or ".." in annotation_relative.parts
             or "\\" in version.root_path
-            or "\\" in version.annotation_path
         ):
             return {}
         version_root = (resolved_managed_root / version_relative).resolve(strict=True)
-        annotation_path = (version_root / annotation_relative).resolve(strict=True)
-        if (
-            not version_root.is_relative_to(resolved_managed_root)
-            or not annotation_path.is_relative_to(version_root)
-            or not annotation_path.is_file()
-        ):
+        if not version_root.is_relative_to(resolved_managed_root):
             return {}
-        payload: Any = json.loads(annotation_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        payload: Any = load_version_coco(
+            version_root,
+            manifest_path=version.manifest_path,
+            annotation_path=version.annotation_path,
+        )
+    except (OSError, VersionStorageError):
         return {}
 
     if not isinstance(payload, dict):

@@ -20,6 +20,7 @@ from label_platform.datasets.publisher import (
     PublicationResult,
 )
 from label_platform.datasets.yolo_adapter import YoloDetectionAdapter
+from label_platform.datasets.versioning import VERSION_FILE_NAME
 from label_platform.db.models import AuditEvent, Dataset, DatasetItem, DatasetVersion
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
@@ -288,8 +289,8 @@ class RegistrationService:
                     )
                 )
             version.root_path = f"{request.dataset_id}/versions/v{version.version_number}"
-            version.manifest_path = "manifest.json"
-            version.annotation_path = "annotations/instances.coco.json"
+            version.manifest_path = VERSION_FILE_NAME
+            version.annotation_path = VERSION_FILE_NAME
             version.class_schema = cast(list[dict[str, Any]], canonical.manifest["categories"])
             version.category_counts = {
                 str(cast(int, category["id"])): category_counts[cast(int, category["id"])]

@@ -12,15 +12,12 @@ Dependencies: matplotlib (available in both venvs).
 import csv
 import json
 import os
-from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 # matplotlib must be imported with Agg backend for headless server
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
 
 
@@ -55,7 +52,6 @@ def plot_per_class_bar(metrics: dict, output_dir: str) -> str | dict[str, str]:
         ("precision", "Precision", "#FF9800"),
         ("recall", "Recall", "#E91E63"),
     ]
-
     results: dict[str, str] = {}
 
     for key, label, color in metric_keys:
@@ -105,8 +101,6 @@ def plot_training_loss_curve(metrics: dict, output_dir: str) -> str:
         return ""
 
     epochs = [e.get("epoch", i) for i, e in enumerate(epochs_data)]
-    results: dict[str, str] = {}
-
     # ── Loss plot ──
     fig, ax = plt.subplots(figsize=(10, 5))
     has_loss = False
@@ -508,7 +502,9 @@ def print_terminal_table(metrics: dict) -> None:
         print("  " + "-" * (66 if has_prf else 40))
         # Summary row
         if len(per_class) > 1:
-            avg = lambda k: sum(c.get(k, 0) or 0 for c in per_class) / len(per_class)
+            def avg(key: str) -> float:
+                return sum(c.get(key, 0) or 0 for c in per_class) / len(per_class)
+
             line = (f"  {'AVERAGE':<20} "
                     f"{avg('mAP50_95'):>10.4f} "
                     f"{avg('mAP50'):>8.4f}")
@@ -563,18 +559,18 @@ def save_markdown(metrics: dict, output_dir: str, plot_paths: dict) -> str:
     task = metrics.get("task", "detect")
 
     lines = [
-        f"# Evaluation Report",
-        f"",
+        "# Evaluation Report",
+        "",
         f"- **Framework**: {framework}",
         f"- **Model**: {model}",
         f"- **Task**: {task}",
         f"- **Weights**: `{metrics.get('weights', 'N/A')}`",
         f"- **Timestamp**: {metrics.get('timestamp', 'N/A')}",
-        f"",
-        f"## Overall Metrics",
-        f"",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "",
+        "## Overall Metrics",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
     ]
 
     for key, label in [

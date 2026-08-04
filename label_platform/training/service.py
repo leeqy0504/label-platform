@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +41,7 @@ class TrainingWorkflow:
         self.export_root = export_root.resolve()
         self.unitrain_mount_root = unitrain_mount_root
         self.connector = connector
-        self.exporter = UnitTrainExporter(self.export_root)
+        self.exporter = UnitTrainExporter(self.export_root, managed_root=self.managed_root)
 
     def create_run(
         self,
@@ -300,9 +299,17 @@ class TrainingWorkflow:
     def _task_type(self, version: DatasetVersion) -> TaskType:
         root = self._version_root(version)
         try:
-            manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+            from label_platform.datasets.versioning import (
+                VersionStorageError,
+                load_version_manifest,
+            )
+
+            manifest = load_version_manifest(
+                root,
+                manifest_path=version.manifest_path,
+            )
             return TaskType(manifest["task_type"])
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+        except (OSError, ValueError, KeyError, TypeError, VersionStorageError) as exc:
             raise TrainingWorkflowError("Dataset version manifest has an invalid task type") from exc
 
     @staticmethod

@@ -6,6 +6,12 @@ import shutil
 from dataclasses import dataclass
 from typing import Any
 
+from label_platform.datasets.versioning import (
+    VersionStorageError,
+    load_version_document,
+    resolve_version_image,
+)
+
 
 UNITRAIN_EXPORT_PROFILE = "unitrain-coco-split-v1"
 UNITRAIN_EXPORT_CONVERTER_VERSION = "label-platform-unitrain-1.0.0"
@@ -26,8 +32,9 @@ class UnitTrainExportResult:
 
 
 class UnitTrainExporter:
-    def __init__(self, export_root: Path):
+    def __init__(self, export_root: Path, *, managed_root: Path | None = None):
         self.export_root = export_root
+        self.managed_root = managed_root
 
     def materialize(
         self,
@@ -41,13 +48,18 @@ class UnitTrainExporter:
         source = version_root.resolve(strict=True)
         if not source.is_dir():
             raise UnitTrainExportError("Canonical version root is not a directory")
-        coco = self._read_object(source / "annotations" / "instances.coco.json")
-        canonical_manifest = self._read_object(source / "manifest.json")
+        try:
+            version = load_version_document(source)
+        except VersionStorageError as exc:
+            raise UnitTrainExportError(str(exc)) from exc
+        coco = version.coco
+        canonical_manifest = version.manifest
         self._validate_canonical(coco)
+        managed_root = self.managed_root or source.parents[2]
 
         version_exports = self.export_root / version_id
         final = version_exports / profile
-        expected_source_hash = self._sha256(source / "manifest.json")
+        expected_source_hash = version.source_sha256
         if final.is_dir():
             existing = self._read_object(final / "export-manifest.json")
             if (
@@ -55,6 +67,13 @@ class UnitTrainExporter:
                 and existing.get("source_manifest_sha256") == expected_source_hash
                 and existing.get("converter_version") == UNITRAIN_EXPORT_CONVERTER_VERSION
             ):
+                self._ensure_relative_image_links(
+                    final,
+                    version_root=source,
+                    managed_root=managed_root,
+                    splits=version.splits,
+                    images=coco["images"],
+                )
                 return self._result(final, existing)
             raise UnitTrainExportError("Existing UnitTrain export does not match this version")
 
@@ -65,8 +84,7 @@ class UnitTrainExporter:
                 self._remove_tree(staging)
             staging.mkdir()
             split_members = {
-                split: self._read_split(source / "splits" / f"{split}.txt")
-                for split in _SPLIT_DIRECTORIES
+                split: set(version.splits[split]) for split in _SPLIT_DIRECTORIES
             }
             if not split_members["train"]:
                 raise UnitTrainExportError("UnitTrain export requires a non-empty train split")
@@ -90,9 +108,15 @@ class UnitTrainExporter:
                     image = image_by_sample.get(sample_key)
                     if image is None:
                         raise UnitTrainExportError(f"Unknown sample in {split} split: {sample_key}")
-                    source_image = self._contained_file(source, image["file_name"])
+                    try:
+                        source_image = resolve_version_image(managed_root, source, image)
+                    except VersionStorageError as exc:
+                        raise UnitTrainExportError(str(exc)) from exc
                     output_name = self._output_name(image)
-                    shutil.copy2(source_image, destination / output_name, follow_symlinks=False)
+                    output_path = destination / output_name
+                    output_path.symlink_to(
+                        Path(os.path.relpath(source_image, start=output_path.parent))
+                    )
                     split_images.append({**image, "file_name": output_name})
                     split_image_ids.add(image["id"])
                 split_annotations = [
@@ -177,6 +201,64 @@ class UnitTrainExporter:
         name = PurePosixPath(image["file_name"]).name
         return f"{image['id']:012d}-{name}"
 
+    def _ensure_relative_image_links(
+        self,
+        export_root: Path,
+        *,
+        version_root: Path,
+        managed_root: Path,
+        splits: dict[str, tuple[str, ...]],
+        images: list[dict[str, Any]],
+    ) -> None:
+        image_by_sample = {image["sample_key"]: image for image in images}
+        for split, destination_name in _SPLIT_DIRECTORIES.items():
+            destination_root = export_root / destination_name
+            repairs: list[tuple[Path, Path]] = []
+            for sample_key in splits[split]:
+                image = image_by_sample.get(sample_key)
+                if image is None:
+                    raise UnitTrainExportError(
+                        f"Existing UnitTrain export references an unknown sample: {sample_key}"
+                    )
+                destination = destination_root / self._output_name(image)
+                if not destination.is_symlink():
+                    raise UnitTrainExportError(
+                        f"Existing UnitTrain export image is not a symbolic link: {destination.name}"
+                    )
+                try:
+                    expected = resolve_version_image(managed_root, version_root, image)
+                    current_target = Path(os.readlink(destination))
+                except (OSError, VersionStorageError) as exc:
+                    raise UnitTrainExportError(
+                        f"Existing UnitTrain export image cannot be resolved: {destination.name}"
+                    ) from exc
+                expected_target = Path(
+                    os.path.relpath(expected, start=destination.parent)
+                )
+                if current_target == expected_target:
+                    continue
+                repairs.append((destination, expected))
+            if repairs:
+                self._replace_image_links(destination_root, repairs)
+
+    @staticmethod
+    def _replace_image_links(
+        destination_root: Path,
+        repairs: list[tuple[Path, Path]],
+    ) -> None:
+        original_mode = destination_root.stat().st_mode & 0o777
+        destination_root.chmod(original_mode | 0o200)
+        try:
+            for destination, source in repairs:
+                temporary = destination.with_name(f".{destination.name}.link-building")
+                temporary.unlink(missing_ok=True)
+                temporary.symlink_to(
+                    Path(os.path.relpath(source, start=destination.parent))
+                )
+                os.replace(temporary, destination)
+        finally:
+            destination_root.chmod(original_mode)
+
     @staticmethod
     def _read_split(path: Path) -> set[str]:
         try:
@@ -207,6 +289,8 @@ class UnitTrainExporter:
     @staticmethod
     def _make_immutable(root: Path) -> None:
         for path in sorted(root.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if path.is_symlink():
+                continue
             path.chmod(0o555 if path.is_dir() else 0o444)
         root.chmod(0o555)
 

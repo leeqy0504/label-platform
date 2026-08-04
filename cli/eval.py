@@ -90,8 +90,8 @@ def main():
         print("\n>>> Generating evaluation report...")
         try:
             from unitrain.eval_report import generate_report
-            outputs = generate_report(metrics_json, output_dir)
-            print(f"\n>>> Evaluation report complete!")
+            generate_report(metrics_json, output_dir)
+            print("\n>>> Evaluation report complete!")
             print(f"    Reports: {output_dir}")
         except Exception as e:
             print(f"\n>>> Warning: Report generation failed: {e}")

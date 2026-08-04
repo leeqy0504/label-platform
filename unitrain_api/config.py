@@ -18,3 +18,4 @@ class UnitTrainAPISettings(BaseSettings):
     port: int = Field(default=8090, ge=1, le=65_535)
     max_concurrent_runs: int = Field(default=1, ge=1, le=32)
     stop_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    failed_prepared_retention_hours: float = Field(default=24, ge=0, le=720)

@@ -63,7 +63,7 @@ class UltralyticsRunner(BaseRunner):
 
         result = self._run_script_file("yolo_train.py", script_config)
         if result.returncode != 0:
-            print(f"[YOLO] Training failed", file=sys.stderr)
+            print("[YOLO] Training failed", file=sys.stderr)
             raise RuntimeError("Training failed")
         return self._parse_train_markers(result.stdout)
 
@@ -81,7 +81,7 @@ class UltralyticsRunner(BaseRunner):
 
         result = self._run_script_file("yolo_predict.py", script_config)
         if result.returncode != 0:
-            print(f"[YOLO] Prediction failed", file=sys.stderr)
+            print("[YOLO] Prediction failed", file=sys.stderr)
             raise RuntimeError("Prediction failed")
         return result.stdout
 
@@ -98,7 +98,7 @@ class UltralyticsRunner(BaseRunner):
 
         result = self._run_script_file("yolo_export.py", script_config, stream_output=False)
         if result.returncode != 0:
-            print(f"[YOLO] Export failed", file=sys.stderr)
+            print("[YOLO] Export failed", file=sys.stderr)
             raise RuntimeError("Export failed")
         return Path(result.stdout.strip())
 
@@ -126,7 +126,7 @@ class UltralyticsRunner(BaseRunner):
 
         result = self._run_script_file("yolo_eval.py", script_config)
         if result.returncode != 0:
-            print(f"[YOLO] Evaluation failed", file=sys.stderr)
+            print("[YOLO] Evaluation failed", file=sys.stderr)
             raise RuntimeError("Evaluation failed")
         print("[YOLO] Evaluation completed successfully")
 

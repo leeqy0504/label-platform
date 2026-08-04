@@ -5,8 +5,13 @@ import json
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
-from label_platform.datasets.contracts import SourceDataset, SourceFormatError
+from label_platform.datasets.contracts import SourceDataset, SourceFormatError, SourceImage
 from label_platform.datasets.labelstudio_adapter import LabelStudioExportAdapter
+from label_platform.datasets.versioning import (
+    image_by_sample,
+    load_version_document,
+    resolve_version_image,
+)
 from label_platform.db.models import DatasetItem, DatasetVersion
 from label_platform.domain.enums import SourceFormat, TaskType, VersionStatus
 
@@ -17,6 +22,7 @@ def load_review_export(
     version: DatasetVersion,
     version_root: Path,
     task_type: TaskType,
+    managed_root: Path | None = None,
 ) -> SourceDataset:
     if version.status is not VersionStatus.READY:
         raise SourceFormatError("Review input version is not ready")
@@ -41,6 +47,8 @@ def load_review_export(
         if sample_key in seen:
             raise SourceFormatError(f"Label Studio task {index} duplicates a sample key")
         seen.add(sample_key)
+        if _is_deleted(task, index):
+            continue
         item = items[sample_key]
         assert isinstance(data, dict)
         data["image"] = item.relative_path
@@ -50,6 +58,34 @@ def load_review_export(
         sample_keys.append(sample_key)
     if seen != set(items):
         raise SourceFormatError("Label Studio export does not contain every input sample")
+    if not rewritten:
+        raise SourceFormatError("Review cannot publish a dataset version with zero images")
+
+    root = managed_root or version_root.parents[2]
+    stored = load_version_document(
+        version_root,
+        manifest_path=version.manifest_path,
+        annotation_path=version.annotation_path,
+    )
+    stored_images = image_by_sample(stored)
+    trusted_images: dict[str, SourceImage] = {}
+    for sample_key in sample_keys:
+        item = items[sample_key]
+        image = stored_images.get(sample_key)
+        if image is None:
+            raise SourceFormatError(f"Canonical image is missing for sample {sample_key}")
+        source_path = resolve_version_image(root, version_root, image)
+        trusted_images[sample_key] = SourceImage(
+            source_path=source_path,
+            relative_path=_relative_below_images(item),
+            sample_key=sample_key,
+            width=item.width,
+            height=item.height,
+            file_size=item.file_size,
+            sha256=item.sha256,
+            split=item.split,
+            group_key=item.group_key,
+        )
 
     category_names = [
         category["name"]
@@ -61,6 +97,7 @@ def load_review_export(
         media_root=version_root,
         dataset_id=version.dataset_id,
         categories=category_names,
+        source_images_by_sample=trusted_images,
     )
 
     old_to_new: dict[str, str] = {}
@@ -89,6 +126,32 @@ def load_review_export(
         images=tuple(normalized_images),
         annotations=normalized_annotations,
     )
+
+
+def _is_deleted(task: dict[str, object], task_index: int) -> bool:
+    annotations = task.get("annotations", [])
+    if not isinstance(annotations, list):
+        raise SourceFormatError(f"Label Studio task {task_index} has invalid annotations")
+    candidates = [
+        annotation
+        for annotation in annotations
+        if isinstance(annotation, dict)
+        and not annotation.get("was_cancelled")
+        and not annotation.get("cancelled")
+    ]
+    if not candidates:
+        return False
+    results = candidates[-1].get("result", [])
+    if not isinstance(results, list):
+        raise SourceFormatError(f"Label Studio task {task_index} has invalid results")
+    for result in results:
+        if not isinstance(result, dict) or result.get("from_name") != "image_disposition":
+            continue
+        value = result.get("value")
+        choices = value.get("choices") if isinstance(value, dict) else None
+        if choices == ["删除图片"]:
+            return True
+    return False
 
 
 def _relative_below_images(item: DatasetItem) -> str:

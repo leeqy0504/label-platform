@@ -158,23 +158,26 @@ def test_yolo_analysis_and_registration_publish_coco_without_mutating_source(
     assert registration["status"] == "succeeded"
 
     version_root = managed_root / registration["result"]["dataset_id"] / "versions/v1"
-    manifest = json.loads((version_root / "manifest.json").read_text(encoding="utf-8"))
-    coco = json.loads(
-        (version_root / "annotations/instances.coco.json").read_text(encoding="utf-8")
-    )
-    assert manifest["source_format"] == "yolo_detection"
-    assert manifest["task_type"] == "detection"
-    assert manifest["split_counts"] == {"train": 2, "val": 1, "test": 1}
-    assert coco["categories"] == [{"id": 1, "name": "person"}, {"id": 2, "name": "rack"}]
-    assert coco["annotations"][0]["category_id"] == 2
-    assert coco["annotations"][0]["bbox"] == pytest.approx([6.0, 2.0, 8.0, 6.0])
-    assert {image["file_name"] for image in coco["images"]} == {
+    document = json.loads((version_root / "version.json").read_text(encoding="utf-8"))
+    assert document["source_format"] == "yolo_detection"
+    assert document["task_type"] == "detection"
+    assert document["split_counts"] == {"train": 2, "val": 1, "test": 1}
+    assert document["categories"] == [
+        {"id": 1, "name": "person"},
+        {"id": 2, "name": "rack"},
+    ]
+    assert document["annotations"][0]["category_id"] == 2
+    assert document["annotations"][0]["bbox"] == pytest.approx([6.0, 2.0, 8.0, 6.0])
+    assert {image["file_name"] for image in document["images"]} == {
         "images/train/a.jpg",
         "images/train/nested/b.png",
         "images/val/c.jpg",
         "images/test/d.jpg",
     }
-    assert all((version_root / image["file_name"]).is_file() for image in coco["images"])
+    assert all(
+        (managed_root / ".blobs/sha256" / image["sha256"]).is_file()
+        for image in document["images"]
+    )
     assert snapshot_files(source) == before
 
 
@@ -367,28 +370,14 @@ def test_dataset_items_include_valid_coco_bounding_boxes(
         assert item is not None
         annotation_path = managed_root / version.root_path / version.annotation_path
         annotation_path.chmod(0o644)
-        annotation_path.write_text(
-            json.dumps(
-                {
-                    "images": [
-                        {
-                            "id": 7,
-                            "sample_key": item.sample_key,
-                            "file_name": item.relative_path,
-                            "width": 20,
-                            "height": 10,
-                        }
-                    ],
-                    "annotations": [
-                        {"image_id": 7, "category_id": 1, "bbox": [2, 1, 8, 4]},
-                        {"image_id": 7, "category_id": 2, "bbox": [10, 2, 5, 6]},
-                        {"image_id": 7, "category_id": 3, "bbox": [0, 0, 0, 2]},
-                    ],
-                    "categories": [],
-                }
-            ),
-            encoding="utf-8",
-        )
+        document = json.loads(annotation_path.read_text(encoding="utf-8"))
+        document["images"][0]["id"] = 7
+        document["annotations"] = [
+            {"image_id": 7, "category_id": 1, "bbox": [2, 1, 8, 4]},
+            {"image_id": 7, "category_id": 2, "bbox": [10, 2, 5, 6]},
+            {"image_id": 7, "category_id": 3, "bbox": [0, 0, 0, 2]},
+        ]
+        annotation_path.write_text(json.dumps(document), encoding="utf-8")
         annotation_path.chmod(0o444)
 
     response = client.get(

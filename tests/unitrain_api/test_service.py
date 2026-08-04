@@ -76,6 +76,7 @@ def test_manager_persists_run_logs_metrics_and_models(tmp_path):
     assert "run.sh" not in " ".join(launcher.commands[0])
 
     run_dir = manager.store.run_dir(run.id)
+    (run_dir / "prepared/yolo/images").mkdir(parents=True)
     metrics_path = run_dir / "artifacts" / "evaluation" / "eval_metrics.json"
     metrics_path.parent.mkdir(parents=True)
     metrics_path.write_text(
@@ -111,6 +112,7 @@ def test_manager_persists_run_logs_metrics_and_models(tmp_path):
         models[0].id,
         "artifacts/evaluation/report.md",
     ) == report_path
+    assert not (run_dir / "prepared").exists()
 
 
 def test_manager_stops_only_owned_process(tmp_path):
@@ -118,11 +120,14 @@ def test_manager_stops_only_owned_process(tmp_path):
     launcher = FakeLauncher()
     manager = RunManager(settings, launcher=launcher, project_root=tmp_path)
     run = manager.create_run(make_payload(tmp_path / "dataset"))
+    prepared = manager.store.run_dir(run.id) / "prepared/yolo"
+    prepared.mkdir(parents=True)
 
     stopped = manager.stop_run(run.id)
 
     assert stopped.status is RunStatus.STOPPED
     assert launcher.processes[0].stopped is True
+    assert not prepared.parent.exists()
 
 
 def test_http_contract_auth_validation_and_pagination(tmp_path):

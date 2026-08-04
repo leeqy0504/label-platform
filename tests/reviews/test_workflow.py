@@ -1,11 +1,17 @@
 import copy
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 
 from sqlalchemy import select
 
 from label_platform.datasets.service import DatasetRegistrationRequest, RegistrationService
+from label_platform.datasets.versioning import (
+    image_by_sample,
+    load_version_document,
+    resolve_version_image,
+)
 from label_platform.db.models import Dataset, DatasetVersion, ReviewSession, ReviewTaskBinding
 from label_platform.domain.enums import ReviewStatus, TaskType, TrainingStatus
 from label_platform.integrations.labelstudio import LabelStudioProgress
@@ -19,6 +25,7 @@ class FakeLabelStudioConnector:
         self.tasks: dict[str, tuple[int, dict[str, object]]] = {}
         self.import_calls = 0
         self.deleted_projects: list[int] = []
+        self.deleted_samples: set[str] = set()
 
     def health(self) -> str:
         return "1.13.1"
@@ -32,7 +39,8 @@ class FakeLabelStudioConnector:
         assert "RectangleLabels" in label_config
 
     def create_local_storage(self, project_id: int, version_path: str) -> int:
-        assert version_path.endswith("/dataset-1/versions/v1/images")
+        assert "/.reviews/" in version_path
+        assert version_path.endswith("/images")
         return 23
 
     def import_tasks(
@@ -63,30 +71,40 @@ class FakeLabelStudioConnector:
 
     def export_annotations(self, project_id: int, output_path: Path) -> Path:
         exported = []
-        for task_id, payload in self.tasks.values():
+        for sample_key, (task_id, payload) in self.tasks.items():
             task = copy.deepcopy(payload)
             task["id"] = task_id
+            results = [
+                {
+                    "id": "human-box",
+                    "from_name": "bbox",
+                    "to_name": "image",
+                    "type": "rectanglelabels",
+                    "original_width": 20,
+                    "original_height": 10,
+                    "value": {
+                        "x": 10,
+                        "y": 10,
+                        "width": 40,
+                        "height": 50,
+                        "rotation": 0,
+                        "rectanglelabels": ["cargo"],
+                    },
+                }
+            ]
+            if sample_key in self.deleted_samples:
+                results.append(
+                    {
+                        "from_name": "image_disposition",
+                        "to_name": "image",
+                        "type": "choices",
+                        "value": {"choices": ["删除图片"]},
+                    }
+                )
             task["annotations"] = [
                 {
                     "ground_truth": False,
-                    "result": [
-                        {
-                            "id": "human-box",
-                            "from_name": "bbox",
-                            "to_name": "image",
-                            "type": "rectanglelabels",
-                            "original_width": 20,
-                            "original_height": 10,
-                            "value": {
-                                "x": 10,
-                                "y": 10,
-                                "width": 40,
-                                "height": 50,
-                                "rotation": 0,
-                                "rectanglelabels": ["cargo"],
-                            },
-                        }
-                    ],
+                    "result": results,
                 }
             ]
             exported.append(task)
@@ -182,6 +200,21 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
         assert len(bindings) == 1
     assert repeated.id == review.id
     assert connector.import_calls == 1
+    review_image = settings.managed_data_root / ".reviews" / review.id / "images/frame.jpg"
+    assert review_image.is_symlink()
+    assert not Path(os.readlink(review_image)).is_absolute()
+    version_root = settings.managed_data_root / version.root_path
+    document = load_version_document(
+        version_root,
+        manifest_path=version.manifest_path,
+        annotation_path=version.annotation_path,
+    )
+    source_image = image_by_sample(document)[next(iter(connector.tasks))]
+    assert review_image.resolve() == resolve_version_image(
+        settings.managed_data_root,
+        version_root,
+        source_image,
+    ).resolve()
 
     workflow.start_export(review.id)
     output = workflow.run_export(review.id)
@@ -192,6 +225,7 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
     assert output.parent_id == version.id
     assert output.review_session_id == review.id
     assert output.annotation_count == 1
+    assert not (settings.managed_data_root / ".reviews" / review.id).exists()
     with session_factory() as session:
         stored = session.get(ReviewSession, review.id)
         assert stored is not None
@@ -233,3 +267,65 @@ def test_review_creation_is_resumable_and_export_publishes_one_child(
         f"{output.id}/unitrain-coco-split-v1"
     )
     assert output.status.value == "ready"
+
+
+def test_review_delete_choice_publishes_filtered_child_and_preserves_parent(
+    api_context,
+    image_factory,
+    tmp_path,
+):
+    settings, session_factory = api_context
+    with session_factory() as session, session.begin():
+        session.add(Dataset(id="dataset-delete", name="warehouse", description="cargo"))
+    source = tmp_path / "delete-source"
+    image_factory(source / "a.jpg", size=(20, 10))
+    image_factory(source / "b.jpg", size=(20, 10))
+    parent = RegistrationService(
+        session_factory,
+        managed_root=settings.managed_data_root,
+    ).register(
+        DatasetRegistrationRequest(
+            dataset_id="dataset-delete",
+            source_path=source,
+            categories=("cargo",),
+            task_type=TaskType.DETECTION,
+            split_ratios={"train": 1.0, "val": 0.0, "test": 0.0},
+        )
+    )
+    connector = FakeLabelStudioConnector()
+    workflow = ReviewWorkflow(
+        session_factory,
+        managed_root=settings.managed_data_root,
+        export_root=tmp_path / "delete-exports",
+        label_studio_mount_root=Path("/datasets"),
+        label_studio_base_url="http://label.test",
+        connector=connector,
+    )
+    review = workflow.create_session(
+        dataset_id="dataset-delete",
+        input_version_id=parent.id,
+        idempotency_key="delete-one",
+    )
+    workflow.run_creation(review.id)
+    connector.deleted_samples.add(sorted(connector.tasks)[0])
+    workflow.start_export(review.id)
+    child = workflow.run_export(review.id)
+
+    assert parent.item_count == 2
+    assert child.item_count == 1
+    assert child.annotation_count == 1
+    parent_json = json.loads(
+        (settings.managed_data_root / parent.root_path / "version.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    child_json = json.loads(
+        (settings.managed_data_root / child.root_path / "version.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(parent_json["images"]) == 2
+    assert len(child_json["images"]) == 1
+    assert {annotation["image_id"] for annotation in child_json["annotations"]} == {
+        child_json["images"][0]["id"]
+    }

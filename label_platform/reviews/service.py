@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
+import os
+import shutil
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from label_platform.datasets.service import DatasetRegistrationRequest, RegistrationService
+from label_platform.datasets.versioning import (
+    VersionStorageError,
+    image_by_sample,
+    load_version_document,
+    load_version_manifest,
+    resolve_version_image,
+)
 from label_platform.db.models import (
     AuditEvent,
     BackgroundJob,
@@ -295,6 +303,7 @@ class ReviewWorkflow:
                     },
                 )
             )
+        self._cleanup_review_view(review_id)
 
     def run_export(
         self,
@@ -311,6 +320,7 @@ class ReviewWorkflow:
                     if output is None:
                         raise ReviewWorkflowError("Review output version was not found")
                     session.expunge(output)
+                    self._cleanup_review_view(review_id)
                     return output
                 if review.status is not ReviewStatus.EXPORTING:
                     raise ReviewConflictError("Review export has not been requested")
@@ -358,6 +368,7 @@ class ReviewWorkflow:
                         version=version,
                         version_root=version_root,
                         task_type=task_type,
+                        managed_root=self.managed_root,
                     )
                 except Exception as exc:
                     session.close()
@@ -381,7 +392,9 @@ class ReviewWorkflow:
                 output.item_count,
                 output.item_count,
             )
-            return self._finish_export(review_id, output, export_path, progress)
+            finished = self._finish_export(review_id, output, export_path, progress)
+            self._cleanup_review_view(review_id)
+            return finished
         except Exception as exc:
             self.fail_session(review_id, exc, recoverable=ReviewStatus.EXPORTING)
             if isinstance(exc, ReviewWorkflowError):
@@ -425,10 +438,14 @@ class ReviewWorkflow:
             if hashlib.sha256(config.encode("utf-8")).hexdigest() != review.config_hash:
                 raise ReviewConflictError("Review label configuration changed after creation")
             version_root = self.managed_root / version.root_path
-            tasks = build_import_tasks(version, version_root, task_type=task_type)
-            storage_path = (
-                self.label_studio_mount_root / version.root_path / "images"
-            ).as_posix()
+            view_relative = self._ensure_review_view(review_id, version, version_root)
+            tasks = build_import_tasks(
+                version,
+                version_root,
+                task_type=task_type,
+                media_root_path=view_relative,
+            )
+            storage_path = (self.label_studio_mount_root / view_relative).as_posix()
             return {
                 "project_id": review.label_studio_project_id,
                 "title": f"{review.dataset.name} v{version.version_number} review",
@@ -551,17 +568,81 @@ class ReviewWorkflow:
     def _task_type(self, version: DatasetVersion) -> TaskType:
         if version.root_path is None:
             raise ReviewWorkflowError("Dataset version has no managed path")
-        manifest_path = self.managed_root / version.root_path / (
-            version.manifest_path or "manifest.json"
-        )
         try:
-            manifest: object = json.loads(manifest_path.read_text(encoding="utf-8"))
-            value = manifest.get("task_type") if isinstance(manifest, dict) else None
+            version_root = self.managed_root / version.root_path
+            manifest = load_version_manifest(
+                version_root,
+                manifest_path=version.manifest_path,
+            )
+            value = manifest.get("task_type")
             if not isinstance(value, str):
                 raise ValueError("task_type must be a string")
             return TaskType(value)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        except (OSError, ValueError, VersionStorageError) as exc:
             raise ReviewWorkflowError("Dataset version manifest has an invalid task type") from exc
+
+    def _ensure_review_view(
+        self,
+        review_id: str,
+        version: DatasetVersion,
+        version_root: Path,
+    ) -> str:
+        relative_root = Path(".reviews") / review_id / "images"
+        final = self.managed_root / relative_root
+        staging = final.parent / ".images-building"
+        document = load_version_document(
+            version_root,
+            manifest_path=version.manifest_path,
+            annotation_path=version.annotation_path,
+        )
+        stored_images = image_by_sample(document)
+        if staging.exists() or staging.is_symlink():
+            self._remove_view(staging)
+        staging.mkdir(parents=True)
+        try:
+            for item in version.items:
+                image = stored_images.get(item.sample_key)
+                if image is None:
+                    raise ReviewWorkflowError(
+                        f"Canonical image is missing for sample {item.sample_key}"
+                    )
+                relative = self._relative_below_images(item.relative_path)
+                destination = staging / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                target = resolve_version_image(self.managed_root, version_root, image)
+                relative_target = Path(os.path.relpath(target, start=destination.parent))
+                destination.symlink_to(relative_target)
+            if final.exists() or final.is_symlink():
+                self._remove_view(final)
+            os.replace(staging, final)
+        except Exception:
+            if staging.exists() or staging.is_symlink():
+                self._remove_view(staging)
+            raise
+        return relative_root.as_posix()
+
+    def _cleanup_review_view(self, review_id: str) -> None:
+        root = self.managed_root / ".reviews" / review_id
+        if root.exists() or root.is_symlink():
+            self._remove_view(root)
+
+    @staticmethod
+    def _relative_below_images(relative_path: str) -> Path:
+        relative = Path(relative_path)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ReviewWorkflowError("Dataset item path is invalid")
+        if relative.parts and relative.parts[0] == "images":
+            relative = Path(*relative.parts[1:])
+        if str(relative) in {"", "."}:
+            raise ReviewWorkflowError("Dataset item path is invalid")
+        return relative
+
+    @staticmethod
+    def _remove_view(path: Path) -> None:
+        if path.is_symlink() or path.is_file():
+            path.unlink(missing_ok=True)
+        elif path.exists():
+            shutil.rmtree(path)
 
     @staticmethod
     def _progress(

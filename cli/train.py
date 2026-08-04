@@ -2,6 +2,7 @@
 """Unified training entry point."""
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -99,8 +100,6 @@ def prompt_clear_gpu_cache(gpu_status: dict) -> bool:
             print("✅ PyTorch 缓存已清理")
             
             # 查找并终止占用显存的进程（仅当前用户的）
-            import os
-            current_user = os.getenv("USER", "")
             output = subprocess.check_output([
                 "nvidia-smi", 
                 "--query-compute-apps=pid,used_memory",
@@ -253,7 +252,7 @@ def _auto_eval(runner, cfg_dict: dict, config, train_info: dict | None) -> None:
         eval_result = runner.eval(eval_cfg)
         metrics_json = eval_result.get("metrics_json", "")
         if metrics_json and Path(metrics_json).exists():
-            print(f"\n>>> Generating evaluation report...")
+            print("\n>>> Generating evaluation report...")
             report_paths = generate_report(metrics_json, eval_output_dir)
             print(f">>> Evaluation report saved to: {eval_output_dir}")
             for name, path in report_paths.items():

@@ -72,6 +72,7 @@ def main() -> None:
         project=output_dir,      # 时间戳目录作为 project
         name="train",            # 固定子目录名，让 Ultralytics 管理
         exist_ok=True,
+        cache=False,
     )
 
     # Emit structured markers for auto-eval discovery

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path, PurePosixPath
@@ -13,6 +12,7 @@ from label_studio_sdk.converter.brush import mask2rle
 from pycocotools import mask as mask_utils
 
 from label_platform.db.models import DatasetVersion
+from label_platform.datasets.versioning import VersionStorageError, load_version_coco
 from label_platform.domain.enums import TaskType, VersionStatus
 
 
@@ -42,6 +42,9 @@ def build_label_config(task_type: TaskType, class_schema: list[dict[str, Any]]) 
         '<Header value="Edit the annotation, then submit the task"/>'
         '<Text name="meta" value="Dataset: $dataset_id | Version: $dataset_version"/>'
         '<Image name="image" value="$image" zoom="true" zoomControl="true"/>'
+        '<Choices name="image_disposition" toName="image" choice="single" showInline="true">'
+        '<Choice value="删除图片"/>'
+        "</Choices>"
         f'<{control} name="{control_name}" toName="image">'
         f"{''.join(labels)}"
         f"</{control}>"
@@ -54,13 +57,17 @@ def build_import_tasks(
     version_root: Path,
     *,
     task_type: TaskType,
+    media_root_path: str | None = None,
 ) -> list[ReviewImportTask]:
     if version.status is not VersionStatus.READY or not version.root_path:
         raise ValueError("Only a ready managed dataset version can be reviewed")
-    annotation_path = version_root / (version.annotation_path or "annotations/instances.coco.json")
     try:
-        document: object = json.loads(annotation_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        document: object = load_version_coco(
+            version_root,
+            manifest_path=version.manifest_path,
+            annotation_path=version.annotation_path,
+        )
+    except (OSError, VersionStorageError) as exc:
         raise ValueError("Cannot read the canonical annotation document") from exc
     if not isinstance(document, dict):
         raise ValueError("Canonical annotation document must be an object")
@@ -98,7 +105,10 @@ def build_import_tasks(
             for annotation in annotations_by_image.get(image.get("id"), [])
         ]
         data: dict[str, object] = {
-            "image": _local_file_url(version.root_path, item.relative_path),
+            "image": _local_file_url(
+                media_root_path or version.root_path,
+                _relative_below_images(item.relative_path) if media_root_path else item.relative_path,
+            ),
             "dataset_id": version.dataset_id,
             "dataset_version": f"v{version.version_number}",
             "sample_key": item.sample_key,
@@ -199,6 +209,17 @@ def _local_file_url(root_path: str, relative_path: str) -> str:
     if root.is_absolute() or relative.is_absolute() or ".." in root.parts or ".." in relative.parts:
         raise ValueError("Managed media path is invalid")
     return f"/data/local-files/?d={quote((root / relative).as_posix(), safe='/')}"
+
+
+def _relative_below_images(relative_path: str) -> str:
+    path = PurePosixPath(relative_path)
+    if path.is_absolute() or ".." in path.parts or "\\" in relative_path:
+        raise ValueError("Managed media path is invalid")
+    if path.parts and path.parts[0] == "images":
+        path = PurePosixPath(*path.parts[1:])
+    if str(path) in {"", "."}:
+        raise ValueError("Managed media path is invalid")
+    return path.as_posix()
 
 
 def _object_list(document: dict[object, object], key: str) -> list[dict[str, object]]:
