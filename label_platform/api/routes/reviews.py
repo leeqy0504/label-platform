@@ -14,6 +14,7 @@ from label_platform.integrations.labelstudio import LabelStudioConnector
 from label_platform.jobs.queue import JobQueue
 from label_platform.reviews.service import (
     ReviewConflictError,
+    ReviewExportPreview,
     ReviewWorkflow,
     ReviewWorkflowError,
 )
@@ -52,6 +53,14 @@ class ReviewResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     job_id: str | None = None
+
+
+class ReviewExportPreviewResponse(BaseModel):
+    input_version_number: int
+    input_image_count: int
+    input_annotation_count: int
+    export_image_count: int
+    export_annotation_count: int
 
 
 def _workflow(request: Request) -> ReviewWorkflow:
@@ -199,6 +208,28 @@ def sync_review(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     session.expire_all()
     return _review_response(_require_review(session, review_id), request=request, job_id=_latest_job_id(session, review_id))
+
+
+@router.get("/{review_id}/export-preview", response_model=ReviewExportPreviewResponse)
+def preview_review_export(
+    review_id: str,
+    request: Request,
+    session: SessionDependency,
+) -> ReviewExportPreviewResponse:
+    _require_review(session, review_id)
+    try:
+        preview: ReviewExportPreview = _workflow(request).preview_export(review_id)
+    except ReviewConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ReviewWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return ReviewExportPreviewResponse(
+        input_version_number=preview.input_version_number,
+        input_image_count=preview.input_image_count,
+        input_annotation_count=preview.input_annotation_count,
+        export_image_count=preview.export_image_count,
+        export_annotation_count=preview.export_annotation_count,
+    )
 
 
 @router.post("/{review_id}/complete", response_model=ReviewResponse, status_code=status.HTTP_202_ACCEPTED)

@@ -7,10 +7,11 @@ import {
   finalizeReviewSession,
   checkLabelStudioConnection,
   syncReviewSession,
+  previewReviewExport,
   retryReviewSession,
   getJob,
 } from '../../../services/api';
-import type { Dataset, ReviewSession } from '../../../types';
+import type { Dataset, ReviewExportPreview, ReviewSession } from '../../../types';
 import { StatusBadge } from '../shared/StatusBadge';
 import { EmptyState, PageLoading } from '../shared/EmptyState';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
@@ -113,6 +114,9 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [exportPreview, setExportPreview] = useState<ReviewExportPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const loadSessions = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -181,6 +185,30 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
     return () => window.clearTimeout(timer);
   }, [sessions, loadSessions]);
 
+  useEffect(() => {
+    if (!finalizeTarget) {
+      setExportPreview(null);
+      setPreviewLoading(false);
+      setPreviewError(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setExportPreview(null);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    void previewReviewExport(finalizeTarget.id)
+      .then(preview => {
+        if (!cancelled) setExportPreview(preview);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewError('暂时无法读取 Label Studio 当前导出统计');
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [finalizeTarget]);
+
   const handleFinalize = async () => {
     if (!finalizeTarget) return;
     setFinalizing(true);
@@ -228,6 +256,12 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
 
   const formatDate = (iso: string | null) =>
     iso ? new Date(iso).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+
+  const inputVersion = finalizeTarget
+    ? dataset.versions.find(version => version.id === finalizeTarget.inputVersionId)
+    : null;
+  const inputImageCount = exportPreview?.inputImageCount ?? inputVersion?.imageCount ?? 0;
+  const inputAnnotationCount = exportPreview?.inputAnnotationCount ?? inputVersion?.annotationCount ?? 0;
 
   return (
     <div className="p-4 md:p-5 overflow-y-auto">
@@ -446,6 +480,37 @@ export function ReviewTab({ dataset, onDeleted }: { dataset: Dataset; onDeleted?
           <li>• 执行 COCO 格式校验（mask polygon + bbox 合规性）</li>
           <li>• 生成新的<strong>不可修改</strong>版本</li>
         </ul>
+        {finalizeTarget && (
+          <div
+            className="mt-3 grid grid-cols-1 gap-3 rounded border border-gray-200 bg-gray-50 p-3 sm:grid-cols-2"
+            aria-label="审核导出统计"
+          >
+            <div>
+              <p className="text-xs font-medium text-gray-700">
+                审核前（{exportPreview?.inputVersion ?? finalizeTarget.inputVersion}）
+              </p>
+              <div className="mt-2 flex items-baseline gap-4 text-xs text-gray-600">
+                <span>图片 <strong className="text-gray-900 tabular-nums">{inputImageCount.toLocaleString()} 张</strong></span>
+                <span>标注 <strong className="text-gray-900 tabular-nums">{inputAnnotationCount.toLocaleString()} 条</strong></span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-700">当前预计导出</p>
+              {previewLoading ? (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+                  <Loader2 className="size-3.5 animate-spin" />正在统计
+                </div>
+              ) : exportPreview ? (
+                <div className="mt-2 flex items-baseline gap-4 text-xs text-gray-600">
+                  <span>图片 <strong className="text-blue-700 tabular-nums">{exportPreview.exportImageCount.toLocaleString()} 张</strong></span>
+                  <span>标注 <strong className="text-blue-700 tabular-nums">{exportPreview.exportAnnotationCount.toLocaleString()} 条</strong></span>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-red-600">{previewError}</p>
+              )}
+            </div>
+          </div>
+        )}
         {finalizeTarget && finalizeTarget.completedTasks < finalizeTarget.totalTasks && (
           <div className="mt-2 flex items-center gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
             <AlertTriangle className="size-3.5 shrink-0" />

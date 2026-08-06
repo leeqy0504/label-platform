@@ -99,3 +99,35 @@ it('deletes an active review after destructive confirmation', async () => {
   await waitFor(() => expect(deleted).toBe(true));
   expect(await screen.findByText('暂无审核任务')).toBeInTheDocument();
 });
+
+it('shows input and current export counts before finalizing a review', async () => {
+  server.use(
+    http.get('/api/integrations/label-studio/health', () => (
+      HttpResponse.json({ status: 'online', version: '1.21.0' })
+    )),
+    http.get('/api/reviews', () => HttpResponse.json({
+      data: [review],
+      meta: { page: 1, page_size: 20, total: 1 },
+    })),
+    http.post('/api/reviews/review-1/sync', () => HttpResponse.json(review)),
+    http.get('/api/reviews/review-1/export-preview', () => HttpResponse.json({
+      input_version_number: 2,
+      input_image_count: 80,
+      input_annotation_count: 80,
+      export_image_count: 79,
+      export_annotation_count: 76,
+    })),
+  );
+  const user = userEvent.setup();
+  render(<ReviewTab dataset={dataset} />);
+
+  await user.click(await screen.findByRole('button', { name: '结束审核并生成版本' }));
+
+  expect(screen.getByRole('heading', { name: '结束审核并生成版本' })).toBeInTheDocument();
+  const statistics = screen.getByLabelText('审核导出统计');
+  expect(statistics).toHaveTextContent('审核前（v2）');
+  expect(statistics).toHaveTextContent('80 张');
+  expect(statistics).toHaveTextContent('80 条');
+  await waitFor(() => expect(statistics).toHaveTextContent('79 张'));
+  expect(statistics).toHaveTextContent('76 条');
+});

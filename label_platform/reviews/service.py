@@ -4,9 +4,11 @@ import hashlib
 import os
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -39,6 +41,15 @@ class ReviewWorkflowError(RuntimeError):
 
 class ReviewConflictError(ReviewWorkflowError):
     pass
+
+
+@dataclass(frozen=True)
+class ReviewExportPreview:
+    input_version_number: int
+    input_image_count: int
+    input_annotation_count: int
+    export_image_count: int
+    export_annotation_count: int
 
 
 class ReviewWorkflow:
@@ -221,6 +232,51 @@ class ReviewWorkflow:
             session.flush()
             session.expunge(review)
             return review
+
+    def preview_export(self, review_id: str) -> ReviewExportPreview:
+        with self.session_factory() as session:
+            review = session.get(ReviewSession, review_id)
+            if review is None:
+                raise ReviewWorkflowError("Review session was not found")
+            if review.status not in {ReviewStatus.READY, ReviewStatus.IN_REVIEW}:
+                raise ReviewConflictError("Review is not ready for export preview")
+            if review.label_studio_project_id is None:
+                raise ReviewWorkflowError("Review project is not ready")
+            project_id = review.label_studio_project_id
+            input_version_id = review.input_version_id
+
+        preview_path = self.export_root / review_id / f".preview-{uuid4().hex}.json"
+        try:
+            self.connector.export_annotations(project_id, preview_path)
+            with self.session_factory() as session:
+                version = session.get(DatasetVersion, input_version_id)
+                if version is None or version.root_path is None:
+                    raise ReviewWorkflowError("Review input version is unavailable")
+                version_root = self.managed_root / version.root_path
+                source = load_review_export(
+                    preview_path,
+                    version=version,
+                    version_root=version_root,
+                    task_type=self._task_type(version),
+                    managed_root=self.managed_root,
+                )
+                return ReviewExportPreview(
+                    input_version_number=version.version_number,
+                    input_image_count=version.item_count,
+                    input_annotation_count=version.annotation_count,
+                    export_image_count=len(source.images),
+                    export_annotation_count=len(source.annotations),
+                )
+        except (ReviewConflictError, ReviewWorkflowError):
+            raise
+        except Exception as exc:
+            raise ReviewWorkflowError("Review export preview could not be generated") from exc
+        finally:
+            preview_path.unlink(missing_ok=True)
+            try:
+                preview_path.parent.rmdir()
+            except OSError:
+                pass
 
     def prepare_retry(self, review_id: str) -> ReviewSession:
         with self.session_factory() as session, session.begin():

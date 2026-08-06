@@ -308,6 +308,15 @@ def test_review_delete_choice_publishes_filtered_child_and_preserves_parent(
     )
     workflow.run_creation(review.id)
     connector.deleted_samples.add(sorted(connector.tasks)[0])
+    preview = workflow.preview_export(review.id)
+
+    assert preview.input_version_number == 1
+    assert preview.input_image_count == 2
+    assert preview.input_annotation_count == 0
+    assert preview.export_image_count == 1
+    assert preview.export_annotation_count == 1
+    assert not list((tmp_path / "delete-exports" / review.id).glob(".preview-*.json"))
+
     workflow.start_export(review.id)
     child = workflow.run_export(review.id)
 

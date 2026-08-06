@@ -15,6 +15,7 @@ import type {
   MediaFile,
   Model,
   ReviewSession,
+  ReviewExportPreview,
   SourceSelectionInput,
   SystemConfig,
   TrainingRun,
@@ -105,6 +106,14 @@ interface ApiReview {
   completed_at: string | null;
   created_at: string;
   job_id: string | null;
+}
+
+interface ApiReviewExportPreview {
+  input_version_number: number;
+  input_image_count: number;
+  input_annotation_count: number;
+  export_image_count: number;
+  export_annotation_count: number;
 }
 
 interface ApiTrainingRun {
@@ -520,6 +529,17 @@ export function deleteReviewSession(id: string): Promise<void> {
 
 export async function syncReviewSession(id: string): Promise<ReviewSession> {
   return mapReview(await request<ApiReview>(`/api/reviews/${id}/sync`, { method: 'POST' }));
+}
+
+export async function previewReviewExport(id: string): Promise<ReviewExportPreview> {
+  const preview = await request<ApiReviewExportPreview>(`/api/reviews/${id}/export-preview`);
+  return {
+    inputVersion: `v${preview.input_version_number}`,
+    inputImageCount: preview.input_image_count,
+    inputAnnotationCount: preview.input_annotation_count,
+    exportImageCount: preview.export_image_count,
+    exportAnnotationCount: preview.export_annotation_count,
+  };
 }
 
 export async function finalizeReviewSession(id: string): Promise<ReviewSession> {

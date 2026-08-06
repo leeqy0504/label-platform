@@ -124,6 +124,14 @@ export interface ReviewSession {
   jobTotal?: number;
 }
 
+export interface ReviewExportPreview {
+  inputVersion: string;
+  inputImageCount: number;
+  inputAnnotationCount: number;
+  exportImageCount: number;
+  exportAnnotationCount: number;
+}
+
 export interface ExportProgress {
   stage: 'exporting' | 'extracting' | 'converting' | 'validating' | 'publishing' | 'done';
   percent: number;
